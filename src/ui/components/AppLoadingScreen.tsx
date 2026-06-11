@@ -1,3 +1,4 @@
+import appIcon from "../../../assets/img/Logo.png";
 import styles from "./AppLoadingScreen.module.css";
 
 const LOADING_LINES = [
@@ -25,12 +26,7 @@ export function AppLoadingScreen({ isLeaving }: AppLoadingScreenProps) {
     >
       <div className={styles.ambient} />
       <div className={styles.content}>
-        <div className={styles.mark} aria-hidden="true">
-          <span className={styles.bar} />
-          <span className={styles.bar} />
-          <span className={styles.bar} />
-          <span className={styles.bar} />
-        </div>
+        <img className={styles.mark} src={appIcon} alt="" />
         <div className={styles.wordmark}>
           <strong>{loadingLine}</strong>
         </div>

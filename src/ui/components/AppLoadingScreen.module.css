@@ -59,39 +59,13 @@
 }
 
 .mark {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  height: 46px;
+  width: 72px;
+  height: 72px;
   margin-bottom: 22px;
-  filter: drop-shadow(0 0 18px rgb(255 0 51 / 42%));
-}
-
-.bar {
-  width: 5px;
-  border-radius: var(--radius-full);
-  background: linear-gradient(180deg, #ff5573, #ff0033);
-  animation: equalize 900ms ease-in-out infinite alternate;
-}
-
-.bar:nth-child(1) {
-  height: 18px;
-  animation-delay: -500ms;
-}
-
-.bar:nth-child(2) {
-  height: 38px;
-  animation-delay: -150ms;
-}
-
-.bar:nth-child(3) {
-  height: 28px;
-  animation-delay: -700ms;
-}
-
-.bar:nth-child(4) {
-  height: 14px;
-  animation-delay: -320ms;
+  object-fit: contain;
+  animation:
+    iconScale 1.8s ease-in-out infinite alternate,
+    iconGlow 1.8s ease-in-out infinite alternate;
 }
 
 .wordmark {
@@ -127,18 +101,6 @@
   animation: progress 1.15s var(--easing-smooth) infinite;
 }
 
-@keyframes equalize {
-  from {
-    transform: scaleY(0.48);
-    opacity: 0.62;
-  }
-
-  to {
-    transform: scaleY(1);
-    opacity: 1;
-  }
-}
-
 @keyframes progress {
   from {
     transform: translateX(-115%);
@@ -146,6 +108,30 @@
 
   to {
     transform: translateX(235%);
+  }
+}
+
+@keyframes iconScale {
+  from {
+    transform: scale(0.96);
+  }
+
+  to {
+    transform: scale(1.04);
+  }
+}
+
+@keyframes iconGlow {
+  from {
+    filter:
+      drop-shadow(0 0 8px rgb(255 0 51 / 28%))
+      drop-shadow(0 0 18px rgb(255 0 51 / 16%));
+  }
+
+  to {
+    filter:
+      drop-shadow(0 0 14px rgb(255 0 51 / 52%))
+      drop-shadow(0 0 30px rgb(255 0 51 / 30%));
   }
 }
 
@@ -173,7 +159,7 @@
   .screen,
   .screen::before,
   .ambient,
-  .bar,
+  .mark,
   .progress span {
     animation: none;
   }
@@ -182,8 +168,8 @@
     transition-duration: 60ms;
   }
 
-  .bar {
-    opacity: 1;
+  .mark {
+    filter: drop-shadow(0 0 12px rgb(255 0 51 / 36%));
   }
 
   .progress span {
