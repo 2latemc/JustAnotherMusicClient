@@ -1,4 +1,14 @@
-# JustAnotherMusicClient
+<picture>
+    <source
+      width="831px"
+      media="(prefers-color-scheme: dark)"
+      srcset="assets\img\Logo_Header_SMALLER.png"
+    >
+    <img 
+      width="831px"
+      src="assets\img\LogoHeader_LIGHT.png"
+    >
+</picture>
 
 A desktop YouTube Music client built with Tauri, React, and TypeScript.
 
