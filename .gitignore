@@ -32,8 +32,7 @@ dist-ssr
 # Tooling caches
 .eslintcache
 
-# Rust / Tauri lockfile (ignore if you don't want pinned deps)
-src-tauri/Cargo.lock
+# Rust application lockfiles should be committed for reproducible builds.
 
 .vscode/*
 

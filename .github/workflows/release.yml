@@ -61,4 +61,4 @@ jobs:
             confirmation before opening it.
           releaseDraft: false
           prerelease: false
-          args: --bundles ${{ matrix.platform.bundles }}
+          args: --locked --bundles ${{ matrix.platform.bundles }}
