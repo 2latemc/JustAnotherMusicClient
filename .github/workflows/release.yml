@@ -18,9 +18,11 @@ jobs:
           - name: Windows
             os: windows-latest
             bundles: msi,nsis
+            apple_signing_identity: ""
           - name: macOS
             os: macos-latest
             bundles: dmg
+            apple_signing_identity: "-"
     runs-on: ${{ matrix.platform.os }}
 
     steps:
@@ -48,6 +50,7 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_SIGNING_IDENTITY: ${{ matrix.platform.apple_signing_identity }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Just Another Music Client ${{ github.ref_name }}"
@@ -57,8 +60,30 @@ jobs:
             Windows: download the `.msi` or NSIS setup `.exe`.
             macOS: download the `.dmg`.
 
-            The macOS build is currently unsigned, so macOS may require
-            confirmation before opening it.
+            The macOS build uses an ad-hoc signature. macOS may still require
+            confirmation in Privacy & Security before opening it.
           releaseDraft: false
           prerelease: false
           args: --bundles ${{ matrix.platform.bundles }}
+
+      - name: Verify macOS DMG and app signature
+        if: matrix.platform.name == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          dmg_path="$(find src-tauri/target/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)"
+          test -n "$dmg_path"
+          hdiutil verify "$dmg_path"
+
+          mount_dir="$(mktemp -d)"
+          cleanup() {
+            hdiutil detach "$mount_dir" -quiet || true
+            rmdir "$mount_dir" || true
+          }
+          trap cleanup EXIT
+
+          hdiutil attach "$dmg_path" -readonly -nobrowse -mountpoint "$mount_dir"
+          app_path="$(find "$mount_dir" -maxdepth 1 -name '*.app' -print -quit)"
+          test -n "$app_path"
+          codesign --verify --deep --strict --verbose=2 "$app_path"
