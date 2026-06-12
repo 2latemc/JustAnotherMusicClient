@@ -1,5 +1,15 @@
 import { useEffect, useState } from "react";
-import { IconDatabase, IconLogin, IconLogout, IconRefresh, IconTrash, IconUser } from "@tabler/icons-react";
+import {
+  IconBug,
+  IconDatabase,
+  IconLogin,
+  IconLogout,
+  IconRefresh,
+  IconStar,
+  IconTrash,
+  IconUser,
+} from "@tabler/icons-react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   clearCache,
   DEFAULT_CACHE_SIZE_GB,
@@ -9,6 +19,9 @@ import {
 } from "../../internal/cache";
 import type { LibraryController, LibraryState } from "../../player/LibraryController";
 import styles from "./SettingsPage.module.css";
+
+const GITHUB_REPOSITORY_URL = "https://github.com/2latemc/JustAnotherMusicClient";
+const GITHUB_NEW_ISSUE_URL = `${GITHUB_REPOSITORY_URL}/issues/new/choose`;
 
 interface SettingsPageProps {
   libraryController: LibraryController;
@@ -91,6 +104,25 @@ export function SettingsPage({
         <span className={styles.eyebrow}>Application</span>
         <h1>Settings</h1>
         <p>Manage the YouTube Music account connected to this client.</p>
+      </div>
+
+      <div className={styles.githubActions}>
+        <button
+          className={styles.githubButton}
+          type="button"
+          onClick={() => void openUrl(GITHUB_REPOSITORY_URL)}
+        >
+          <IconStar size={18} />
+          Star us on GitHub
+        </button>
+        <button
+          className={styles.secondaryButton}
+          type="button"
+          onClick={() => void openUrl(GITHUB_NEW_ISSUE_URL)}
+        >
+          <IconBug size={18} />
+          Report an issue or request a feature
+        </button>
       </div>
 
       <section className={styles.card} aria-labelledby="account-settings-title">
@@ -220,6 +252,7 @@ export function SettingsPage({
           </button>
         </div>
       </section>
+
     </main>
   );
 }

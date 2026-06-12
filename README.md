@@ -46,15 +46,20 @@ JustAnotherMusicClient brings YouTube Music to the desktop in a focused, native-
 ## Download ⏬
 
 Download the **newest available installer** from the [latest release](https://github.com/2latemc/JustAnotherMusicClient/releases/latest) for either Windows or MacOs.
-<source
+<a href="https://github.com/2latemc/JustAnotherMusicClient/releases/latest">
+  <picture>
+    <source
       width="831px"
       media="(prefers-color-scheme: dark)"
-      srcset="assets\img\Screenshot02.png"
+      srcset="assets/img/Screenshot02.png"
     >
-    <img 
+    <img
       width="831px"
-      src="assets\img\Screenshot02.png"
+      src="assets/img/Screenshot02.png"
+      alt="Screenshot"
     >
+  </picture>
+</a>
 
 ## Roadmap 📌
 - **Better lyrics consistency** (some songs still don't have them)
@@ -72,7 +77,7 @@ Download the **newest available installer** from the [latest release](https://gi
 - **macOS** support is experimental and may have incomplete features or platform-specific issues.
 - **Linux** honestly haven't tried it. Should work if you compile it from source? If someone tries let me know!
 ### MacOs Issues
-**MacOs will prompt you with a Keychain popup asking for permission** for the clients keychain folder. This is a specific folder for this application where we can store YouTube Music sign in cookies so that they are stored more securely. 
+**MacOs may prompt you with a Keychain popup asking for permission.** The app stores one encryption key in its own Keychain entry. Your YouTube Music session is encrypted with that key before it is saved in the app data directory.
 
 If you do not need signing into YouTube Music you dont need to grant Keychain permissions. If you do it is recommended to click "always allow" in the popup to prevent MacOs from being annoying 
 
@@ -142,4 +147,3 @@ Install Rust and Cargo from [rustup.rs](https://rustup.rs/), restart your termin
 #### WebView2 is missing
 
 Install the [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/), then run the app again.
-

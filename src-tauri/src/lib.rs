@@ -11,6 +11,14 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 use url::form_urlencoded;
 
+#[cfg(target_os = "macos")]
+use aes_gcm::{
+    aead::{Aead, KeyInit},
+    Aes256Gcm, Nonce,
+};
+#[cfg(target_os = "macos")]
+use rand::{rngs::OsRng, RngCore};
+
 #[cfg(target_os = "windows")]
 mod windows_media;
 
@@ -18,6 +26,10 @@ mod windows_media;
 const KEYRING_SERVICE: &str = "com.ytmusicdock.app";
 const KEYRING_USER: &str = "youtube-oauth";
 const YOUTUBE_COOKIE_KEYRING_USER: &str = "youtube-music-cookie";
+#[cfg(target_os = "macos")]
+const YOUTUBE_COOKIE_ENCRYPTION_KEY_USER: &str = "youtube-music-cookie-encryption-key-v1";
+#[cfg(target_os = "macos")]
+const YOUTUBE_COOKIE_ENCRYPTED_FILE: &str = "youtube-music-session-v1.bin";
 const YOUTUBE_LOGIN_WINDOW: &str = "youtube-music-login";
 const YOUTUBE_LOGIN_URL: &str = "https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fmusic.youtube.com%2F";
 #[cfg(target_os = "macos")]
@@ -344,7 +356,7 @@ fn youtube_cookie_chunk_entry(index: usize) -> Result<keyring::Entry, CommandErr
     })
 }
 
-fn save_youtube_music_cookie(cookie: &str) -> Result<(), CommandError> {
+fn save_youtube_music_cookie_entries(cookie: &str) -> Result<(), CommandError> {
     let chunks = cookie
         .as_bytes()
         .chunks(YOUTUBE_COOKIE_CHUNK_SIZE)
@@ -376,6 +388,92 @@ fn save_youtube_music_cookie(cookie: &str) -> Result<(), CommandError> {
             message: format!("YouTube Music session manifest save failed: {error}"),
         })?;
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn youtube_cookie_encryption_key_entry() -> Result<keyring::Entry, CommandError> {
+    keyring::Entry::new(KEYRING_SERVICE, YOUTUBE_COOKIE_ENCRYPTION_KEY_USER).map_err(|error| {
+        CommandError {
+            message: format!("credential store unavailable: {error}"),
+        }
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn youtube_cookie_encrypted_file(app: &tauri::AppHandle) -> Result<PathBuf, CommandError> {
+    app.path()
+        .app_data_dir()
+        .map(|path| path.join(YOUTUBE_COOKIE_ENCRYPTED_FILE))
+        .map_err(|error| CommandError {
+            message: format!("application data directory unavailable: {error}"),
+        })
+}
+
+#[cfg(target_os = "macos")]
+fn load_or_create_cookie_encryption_key() -> Result<[u8; 32], CommandError> {
+    let entry = youtube_cookie_encryption_key_entry()?;
+    match entry.get_password() {
+        Ok(encoded) => {
+            let decoded = STANDARD.decode(encoded).map_err(|error| CommandError {
+                message: format!("stored session encryption key is invalid: {error}"),
+            })?;
+            decoded.try_into().map_err(|_| CommandError {
+                message: "stored session encryption key has an invalid length.".to_string(),
+            })
+        }
+        Err(keyring::Error::NoEntry) => {
+            let mut key = [0_u8; 32];
+            OsRng.fill_bytes(&mut key);
+            entry
+                .set_password(&STANDARD.encode(key))
+                .map_err(|error| CommandError {
+                    message: format!("session encryption key save failed: {error}"),
+                })?;
+            Ok(key)
+        }
+        Err(error) => Err(CommandError {
+            message: format!("session encryption key load failed: {error}"),
+        }),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn save_youtube_music_cookie(
+    app: &tauri::AppHandle,
+    cookie: &str,
+) -> Result<(), CommandError> {
+    let key = load_or_create_cookie_encryption_key()?;
+    let cipher = Aes256Gcm::new_from_slice(&key).map_err(|error| CommandError {
+        message: format!("session encryption setup failed: {error}"),
+    })?;
+    let mut nonce_bytes = [0_u8; 12];
+    OsRng.fill_bytes(&mut nonce_bytes);
+    let encrypted = cipher
+        .encrypt(Nonce::from_slice(&nonce_bytes), cookie.as_bytes())
+        .map_err(|error| CommandError {
+            message: format!("session encryption failed: {error}"),
+        })?;
+
+    let path = youtube_cookie_encrypted_file(app)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| CommandError {
+            message: format!("session directory creation failed: {error}"),
+        })?;
+    }
+    let mut contents = Vec::with_capacity(nonce_bytes.len() + encrypted.len());
+    contents.extend_from_slice(&nonce_bytes);
+    contents.extend_from_slice(&encrypted);
+    fs::write(path, contents).map_err(|error| CommandError {
+        message: format!("encrypted session save failed: {error}"),
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
+fn save_youtube_music_cookie(
+    _app: &tauri::AppHandle,
+    cookie: &str,
+) -> Result<(), CommandError> {
+    save_youtube_music_cookie_entries(cookie)
 }
 
 fn delete_youtube_music_cookie_entries() -> Result<(), CommandError> {
@@ -431,8 +529,7 @@ fn delete_youtube_credentials() -> Result<(), CommandError> {
     }
 }
 
-#[tauri::command]
-fn load_youtube_music_cookie() -> Result<Option<String>, CommandError> {
+fn load_youtube_music_cookie_entries() -> Result<Option<String>, CommandError> {
     match youtube_cookie_keyring_entry()?.get_password() {
         Ok(manifest) if manifest.starts_with("chunks:") => {
             let chunk_count = manifest
@@ -477,6 +574,65 @@ fn load_youtube_music_cookie() -> Result<Option<String>, CommandError> {
         Err(error) => Err(CommandError {
             message: format!("YouTube Music session load failed: {error}"),
         }),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn load_encrypted_youtube_music_cookie(
+    app: &tauri::AppHandle,
+) -> Result<Option<String>, CommandError> {
+    let path = youtube_cookie_encrypted_file(app)?;
+    let contents = match fs::read(path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(CommandError {
+                message: format!("encrypted session load failed: {error}"),
+            })
+        }
+    };
+    if contents.len() <= 12 {
+        return Err(CommandError {
+            message: "encrypted session file is invalid.".to_string(),
+        });
+    }
+    let key = load_or_create_cookie_encryption_key()?;
+    let cipher = Aes256Gcm::new_from_slice(&key).map_err(|error| CommandError {
+        message: format!("session decryption setup failed: {error}"),
+    })?;
+    let decrypted = cipher
+        .decrypt(Nonce::from_slice(&contents[..12]), &contents[12..])
+        .map_err(|error| CommandError {
+            message: format!("session decryption failed: {error}"),
+        })?;
+    String::from_utf8(decrypted)
+        .map(Some)
+        .map_err(|error| CommandError {
+            message: format!("decrypted session is invalid: {error}"),
+        })
+}
+
+#[tauri::command]
+fn load_youtube_music_cookie(
+    app: tauri::AppHandle,
+) -> Result<Option<String>, CommandError> {
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(cookie) = load_encrypted_youtube_music_cookie(&app)? {
+            return Ok(Some(cookie));
+        }
+        if let Some(cookie) = load_youtube_music_cookie_entries()? {
+            save_youtube_music_cookie(&app, &cookie)?;
+            delete_youtube_music_cookie_entries()?;
+            return Ok(Some(cookie));
+        }
+        return Ok(None);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        load_youtube_music_cookie_entries()
     }
 }
 
@@ -605,7 +761,7 @@ async fn sign_in_youtube_music(app: tauri::AppHandle) -> Result<String, CommandE
                 cookies.len(),
                 cookie_header.len()
             );
-            save_youtube_music_cookie(&cookie_header)?;
+            save_youtube_music_cookie(&app, &cookie_header)?;
             eprintln!("[internal][tauri][info] sign_in_youtube_music credential saved");
             let _ = window.close();
             eprintln!("[internal][tauri][info] sign_in_youtube_music login window close requested");
@@ -639,6 +795,21 @@ async fn delete_youtube_music_cookie(app: tauri::AppHandle) -> Result<(), Comman
         let _ = window.close();
     }
 
+    #[cfg(target_os = "macos")]
+    {
+        let path = youtube_cookie_encrypted_file(&app)?;
+        match fs::remove_file(path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(CommandError {
+                    message: format!("encrypted session delete failed: {error}"),
+                })
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
     delete_youtube_music_cookie_entries()?;
     eprintln!("[internal][tauri][info] delete_youtube_music_cookie complete");
     Ok(())

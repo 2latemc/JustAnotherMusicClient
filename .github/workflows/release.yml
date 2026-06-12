@@ -60,8 +60,16 @@ jobs:
             Windows: download the `.msi` or NSIS setup `.exe`.
             macOS: download the `.dmg`.
 
-            The macOS build uses an ad-hoc signature. macOS may still require
-            confirmation in Privacy & Security before opening it.
+            ## macOS notice
+
+            Because the macOS build is not notarized, you may need to open
+            System Settings, go to Privacy & Security, and click **Open Anyway**
+            after trying to launch the app for the first time.
+
+            macOS may also show a Keychain access popup. The app stores one
+            encryption key in its own Keychain entry. Your YouTube session is
+            encrypted with that key before it is saved in the app data directory.
+            This popup is expected.
           releaseDraft: false
           prerelease: false
           args: --bundles ${{ matrix.platform.bundles }}

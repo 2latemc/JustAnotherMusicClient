@@ -27,6 +27,10 @@ base64 = "0.22"
 url = "2.5"
 keyring = { version = "3.6", features = ["apple-native", "windows-native", "sync-secret-service"] }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+aes-gcm = "0.10"
+rand = "0.8"
+
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.61.3", features = [
   "Foundation",
