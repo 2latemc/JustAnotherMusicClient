@@ -18,6 +18,7 @@ A desktop YouTube Music client built with Tauri, React, and TypeScript for **Win
 > 
 >
 
+If you like this project, **starring it on Github** would help A LOT!
 ## About ℹ️
 
 JustAnotherMusicClient brings YouTube Music to the desktop in a focused, native-feeling application. YouTube does not provide an official desktop client, so this project aims to provide a polished alternative that integrates with YouTube Music while keeping the experience fast and familiar.

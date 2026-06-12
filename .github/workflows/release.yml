@@ -20,7 +20,7 @@ jobs:
             bundles: msi,nsis
           - name: macOS
             os: macos-latest
-            bundles: app,dmg
+            bundles: dmg
     runs-on: ${{ matrix.platform.os }}
 
     steps:
