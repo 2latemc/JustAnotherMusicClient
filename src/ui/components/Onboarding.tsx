@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { IconX } from "@tabler/icons-react";
+import { IconKey, IconX } from "@tabler/icons-react";
 import { primaryModifierLabel } from "../platform";
 import styles from "./Onboarding.module.css";
 
@@ -173,6 +173,41 @@ export function OnboardingWelcome() {
       <div className={styles.welcomeAmbient} />
       <div className={styles.welcomeText}>
         <strong>Welcome</strong>
+      </div>
+    </div>
+  );
+}
+
+interface KeychainNoticeProps {
+  onContinue: () => void;
+}
+
+export function KeychainNotice({ onContinue }: KeychainNoticeProps) {
+  return (
+    <div className={styles.keychainNotice} role="dialog" aria-modal="true" aria-labelledby="keychain-title">
+      <div className={styles.keychainAmbient} />
+      <div className={styles.keychainCard}>
+        <span className={styles.keychainIcon} aria-hidden="true">
+          <IconKey size={28} />
+        </span>
+        <h1 id="keychain-title">A note about macOS Keychain</h1>
+        <p>
+          This Client uses Keychain to protect the encryption key for your
+          YouTube Music session cookie. macOS may ask for permission when you continue.
+        </p>
+        <p>
+          The app only accesses the Keychain item it created for this purpose. It does not
+          request access to your passwords or any other Keychain items. You can also deny this but signing in with YT Music will not work then!
+        </p>
+        <p>
+          <strong>
+If you want for the popup to go away click "always allow"
+        </strong>
+        
+        </p>
+        <button type="button" onClick={onContinue}>
+          Continue
+        </button>
       </div>
     </div>
   );

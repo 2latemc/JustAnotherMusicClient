@@ -284,6 +284,108 @@
     0 0 62px rgb(255 0 51 / 55%);
 }
 
+.keychainNotice {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  padding: 32px;
+  background:
+    radial-gradient(circle at 50% 42%, rgb(255 38 76 / 18%), transparent 30%),
+    linear-gradient(145deg, #090103 0%, #170006 48%, #050000 100%);
+}
+
+.keychainAmbient {
+  position: absolute;
+  inset: -30%;
+  background:
+    linear-gradient(115deg, transparent 43%, rgb(255 0 51 / 5%) 50%, transparent 57%),
+    repeating-linear-gradient(
+      125deg,
+      transparent 0,
+      transparent 68px,
+      rgb(255 255 255 / 1.5%) 69px,
+      transparent 70px
+    );
+  transform: rotate(-5deg);
+}
+
+.keychainCard {
+  position: relative;
+  width: min(560px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: var(--radius-lg);
+  background: rgb(12 5 7 / 88%);
+  box-shadow: 0 28px 80px rgb(0 0 0 / 55%);
+  text-align: center;
+  backdrop-filter: blur(18px);
+}
+
+.keychainIcon {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 20px;
+  border: 1px solid rgb(255 0 51 / 42%);
+  border-radius: var(--radius-full);
+  background: rgb(255 0 51 / 12%);
+  color: var(--color-accent);
+  box-shadow: 0 0 28px rgb(255 0 51 / 18%);
+}
+
+.keychainCard h1 {
+  margin: 10px 0 14px;
+  color: #fff;
+  font-size: clamp(26px, 4vw, 36px);
+  letter-spacing: -0.035em;
+}
+
+.keychainCard p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-md);
+  line-height: 1.6;
+}
+
+.keychainCard p + p {
+  margin-top: 12px;
+}
+
+.keychainCard button {
+  min-width: 150px;
+  min-height: 42px;
+  margin-top: 28px;
+  padding: 0 22px;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  background: var(--color-accent);
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: var(--font-weight-semibold);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.keychainCard button:hover {
+  background: transparent;
+  color: var(--color-accent);
+  transform: translateY(-1px);
+}
+
+.keychainCard button:active {
+  transform: translateY(0);
+}
+
 @keyframes blink {
   50% {
     opacity: 0;

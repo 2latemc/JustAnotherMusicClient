@@ -30,13 +30,16 @@ import { AppLoadingScreen } from "./components/AppLoadingScreen";
 import {
   Onboarding,
   OnboardingCompleteToast,
+  KeychainNotice,
   OnboardingWelcome,
   type OnboardingStep,
 } from "./components/Onboarding";
+import { isMacOS } from "./platform";
 
 const restoredSession = loadAppSession();
 const LOADING_SCREEN_FADE_MS = 80;
 const ONBOARDING_COMPLETE_KEY = "yt-music-dock:onboarding-complete";
+const KEYCHAIN_NOTICE_COMPLETE_KEY = "yt-music-dock:keychain-notice-complete";
 const LOADING_SCREEN_MIN_MS = 1000;
 
 export default function App() {
@@ -64,6 +67,9 @@ export default function App() {
   const [onboardingSecondTabId, setOnboardingSecondTabId] = useState<string | null>(null);
   const [, setOnboardingSearchQuery] = useState("");
   const [showOnboardingComplete, setShowOnboardingComplete] = useState(false);
+  const [showKeychainNotice, setShowKeychainNotice] = useState(
+    () => isMacOS && localStorage.getItem(KEYCHAIN_NOTICE_COMPLETE_KEY) !== "true"
+  );
   const [showOnboardingWelcome, setShowOnboardingWelcome] = useState(
     () => localStorage.getItem(ONBOARDING_COMPLETE_KEY) !== "true"
   );
@@ -94,8 +100,9 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (showKeychainNotice) return;
     void libraryController.initialize();
-  }, []);
+  }, [showKeychainNotice]);
 
   useEffect(() => {
     const hasRenderableLibrary = Boolean(libraryState.library);
@@ -515,6 +522,11 @@ export default function App() {
     playerUIStore.setLyricsOpen(true);
   };
 
+  const handleKeychainNoticeContinue = () => {
+    localStorage.setItem(KEYCHAIN_NOTICE_COMPLETE_KEY, "true");
+    setShowKeychainNotice(false);
+  };
+
   const handleReorderTab = (
     draggedTabId: string,
     targetTabId: string,
@@ -709,6 +721,9 @@ export default function App() {
       {loadingScreenState !== "hidden" && (
         <AppLoadingScreen isLeaving={loadingScreenState === "leaving"} />
       )}
+        {showKeychainNotice && (
+          <KeychainNotice onContinue={handleKeychainNoticeContinue} />
+        )}
         {loadingScreenState === "hidden" && showOnboardingWelcome && (
           <OnboardingWelcome />
         )}

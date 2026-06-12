@@ -1440,18 +1440,13 @@ export class YouTubeMusicDataSource extends DataSource {
       trackId: track.id,
     });
 
-    const response = await tauriFetch(streamUrl, {
-      headers: {
-        Accept: "*/*",
-        Range: "bytes=0-",
-      },
+    const downloadedBytes = await invoke<number[] | Uint8Array>("fetch_audio_bytes", {
+      url: streamUrl,
+      trackId: track.id,
     });
-
-    if (!response.ok) {
-      throw new Error(`Audio download failed with HTTP ${response.status}.`);
-    }
-
-    const audioBytes = await response.arrayBuffer();
+    const audioBytes = downloadedBytes instanceof Uint8Array
+      ? downloadedBytes
+      : new Uint8Array(downloadedBytes);
     if (audioBytes.byteLength === 0) {
       throw new Error("Audio download returned no data.");
     }
@@ -1459,9 +1454,11 @@ export class YouTubeMusicDataSource extends DataSource {
     logInternalInfo("YouTubeMusicDataSource.getStreamData download success", {
       trackId: track.id,
       byteLength: audioBytes.byteLength,
-      contentType: response.headers.get("content-type"),
     });
 
-    return audioBytes;
+    return audioBytes.buffer.slice(
+      audioBytes.byteOffset,
+      audioBytes.byteOffset + audioBytes.byteLength,
+    ) as ArrayBuffer;
   }
 }
