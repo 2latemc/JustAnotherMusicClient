@@ -416,7 +416,13 @@ export class PlayerController {
 
     try {
       const startedAt = performance.now();
-      await this.audioEngine.loadTrack(track.id);
+      const audioData = this.audioEngine.usesNativeAudio()
+        ? await this.dataSource.getStreamData?.(track)
+        : undefined;
+      if (this.audioEngine.usesNativeAudio() && !audioData) {
+        throw new Error("The data source does not support native audio playback.");
+      }
+      await this.audioEngine.loadTrack(track.id, audioData);
 
       this.loadedTrackId = track.id;
       if (this.pendingSeekTime !== null) {

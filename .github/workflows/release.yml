@@ -10,8 +10,18 @@ permissions:
 
 jobs:
   release:
-    name: Build Windows installers
-    runs-on: windows-latest
+    name: Build ${{ matrix.platform.name }} installers
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - name: Windows
+            os: windows-latest
+            bundles: msi,nsis
+          - name: macOS
+            os: macos-latest
+            bundles: app,dmg
+    runs-on: ${{ matrix.platform.os }}
 
     steps:
       - name: Check out repository
@@ -42,9 +52,13 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "Just Another Music Client ${{ github.ref_name }}"
           releaseBody: |
-            Windows installers for Just Another Music Client.
+            Desktop installers for Just Another Music Client.
 
-            Download the `.msi` or the NSIS setup `.exe` below.
+            Windows: download the `.msi` or NSIS setup `.exe`.
+            macOS: download the `.dmg`.
+
+            The macOS build is currently unsigned, so macOS may require
+            confirmation before opening it.
           releaseDraft: false
           prerelease: false
-          args: --bundles msi,nsis
+          args: --bundles ${{ matrix.platform.bundles }}

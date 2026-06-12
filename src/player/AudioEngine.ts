@@ -57,6 +57,29 @@ const audioEngines = new Set<AudioEngine>();
 let playbackClaimId = 0;
 let playbackOwner: AudioEngine | null = null;
 
+function isMacOS(): boolean {
+  return /Macintosh|Mac OS X/.test(navigator.userAgent);
+}
+
+function detectAudioMimeType(bytes: Uint8Array): string {
+  if (
+    bytes.length >= 4
+    && bytes[0] === 0x1a
+    && bytes[1] === 0x45
+    && bytes[2] === 0xdf
+    && bytes[3] === 0xa3
+  ) {
+    return "audio/webm";
+  }
+  if (
+    bytes.length >= 12
+    && String.fromCharCode(...bytes.slice(4, 8)) === "ftyp"
+  ) {
+    return "audio/mp4";
+  }
+  return "audio/mp4";
+}
+
 function loadYouTubeIframeApi(): Promise<void> {
   if (window.YT?.Player) return Promise.resolve();
   if (iframeApiPromise) return iframeApiPromise;
@@ -79,8 +102,11 @@ function loadYouTubeIframeApi(): Promise<void> {
 }
 
 export class AudioEngine {
+  private readonly useNativeAudio = isMacOS();
   private player: YouTubePlayer | null = null;
   private playerPromise: Promise<YouTubePlayer> | null = null;
+  private audio: HTMLAudioElement | null = null;
+  private audioObjectUrl: string | null = null;
   private currentVideoId: string | null = null;
   private volume = 1;
   private muted = false;
@@ -98,7 +124,19 @@ export class AudioEngine {
     audioEngines.add(this);
   }
 
-  async loadTrack(videoId: string): Promise<void> {
+  usesNativeAudio(): boolean {
+    return this.useNativeAudio;
+  }
+
+  async loadTrack(videoId: string, audioData?: ArrayBuffer): Promise<void> {
+    if (this.useNativeAudio) {
+      if (!audioData) {
+        throw new Error("Native macOS playback requires downloaded audio data.");
+      }
+      await this.loadNativeAudio(videoId, audioData);
+      return;
+    }
+
     const requestId = ++this.loadRequestId;
     const player = await this.ensurePlayer();
     if (requestId !== this.loadRequestId) return;
@@ -125,6 +163,15 @@ export class AudioEngine {
 
   async play(): Promise<boolean> {
     const claimId = this.claimPlayback();
+    if (this.useNativeAudio) {
+      if (!this.audio || !this.currentVideoId) {
+        throw new Error("No audio track is loaded.");
+      }
+      this.applyNativeAudioSettings();
+      await this.audio.play();
+      return claimId === playbackClaimId && playbackOwner === this;
+    }
+
     const player = await this.ensurePlayer();
     if (claimId !== playbackClaimId || playbackOwner !== this) {
       player.pauseVideo();
@@ -161,6 +208,7 @@ export class AudioEngine {
   }
 
   pause(): void {
+    this.audio?.pause();
     this.player?.pauseVideo();
   }
 
@@ -181,6 +229,7 @@ export class AudioEngine {
       playbackOwner = null;
       playbackClaimId += 1;
     }
+    this.releaseNativeAudio();
     this.player?.stopVideo();
     this.currentVideoId = null;
     this.rejectStateWaiters(new Error("Playback was stopped."));
@@ -199,20 +248,29 @@ export class AudioEngine {
 
   seekTo(seconds: number): void {
     if (!Number.isFinite(seconds)) return;
+    if (this.audio) {
+      this.audio.currentTime = Math.min(
+        Math.max(0, seconds),
+        Number.isFinite(this.audio.duration) ? this.audio.duration : seconds,
+      );
+    }
     this.player?.seekTo(Math.max(0, seconds), true);
   }
 
   setVolume(level: number): void {
     this.volume = Math.min(1, Math.max(0, level));
+    if (this.audio) this.audio.volume = this.volume;
     this.player?.setVolume(Math.round(this.volume * 100));
   }
 
   getVolume(): number {
+    if (this.audio) return this.audio.volume;
     return this.player ? this.player.getVolume() / 100 : this.volume;
   }
 
   setMuted(isMuted: boolean): void {
     this.muted = isMuted;
+    if (this.audio) this.audio.muted = isMuted;
     if (isMuted) {
       this.player?.mute();
     } else {
@@ -221,15 +279,91 @@ export class AudioEngine {
   }
 
   isMuted(): boolean {
+    if (this.audio) return this.audio.muted;
     return this.player?.isMuted() ?? this.muted;
   }
 
   getCurrentTime(): number {
+    if (this.audio) return this.audio.currentTime;
     return this.player?.getCurrentTime() ?? 0;
   }
 
   getDuration(): number {
+    if (this.audio) return Number.isFinite(this.audio.duration) ? this.audio.duration : 0;
     return this.player?.getDuration() ?? 0;
+  }
+
+  private async loadNativeAudio(videoId: string, audioData: ArrayBuffer): Promise<void> {
+    const requestId = ++this.loadRequestId;
+    this.releaseNativeAudio();
+
+    const bytes = new Uint8Array(audioData);
+    const blob = new Blob([bytes], { type: detectAudioMimeType(bytes) });
+    const objectUrl = URL.createObjectURL(blob);
+    const audio = new Audio();
+    audio.preload = "auto";
+    audio.src = objectUrl;
+    audio.addEventListener("ended", () => this.onEnded?.());
+    audio.addEventListener("error", () => {
+      logInternalError(
+        "AudioEngine native audio error",
+        new Error(`Native audio failed with media error ${audio.error?.code ?? "unknown"}.`),
+        { videoId },
+      );
+    });
+    this.audio = audio;
+    this.audioObjectUrl = objectUrl;
+    this.currentVideoId = videoId;
+    this.applyNativeAudioSettings();
+
+    await new Promise<void>((resolve, reject) => {
+      const timeoutId = window.setTimeout(() => {
+        cleanup();
+        reject(new Error("Timed out while loading native audio."));
+      }, 30_000);
+      const cleanup = () => {
+        window.clearTimeout(timeoutId);
+        audio.removeEventListener("canplay", handleReady);
+        audio.removeEventListener("error", handleError);
+      };
+      const handleReady = () => {
+        cleanup();
+        resolve();
+      };
+      const handleError = () => {
+        cleanup();
+        reject(new Error(`Unable to decode audio on macOS (${audio.error?.code ?? "unknown"}).`));
+      };
+      audio.addEventListener("canplay", handleReady, { once: true });
+      audio.addEventListener("error", handleError, { once: true });
+      audio.load();
+    });
+
+    if (requestId !== this.loadRequestId) return;
+    logInternalInfo("AudioEngine native audio loaded", {
+      videoId,
+      byteLength: audioData.byteLength,
+      mimeType: blob.type,
+    });
+  }
+
+  private applyNativeAudioSettings(): void {
+    if (!this.audio) return;
+    this.audio.volume = this.volume;
+    this.audio.muted = this.muted;
+  }
+
+  private releaseNativeAudio(): void {
+    if (this.audio) {
+      this.audio.pause();
+      this.audio.removeAttribute("src");
+      this.audio.load();
+      this.audio = null;
+    }
+    if (this.audioObjectUrl) {
+      URL.revokeObjectURL(this.audioObjectUrl);
+      this.audioObjectUrl = null;
+    }
   }
 
   private async ensurePlayer(): Promise<YouTubePlayer> {

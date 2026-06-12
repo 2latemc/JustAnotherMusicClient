@@ -10,7 +10,7 @@
     >
 </picture>
 
-A desktop YouTube Music client built with Tauri, React, and TypeScript.
+A desktop YouTube Music client built with Tauri, React, and TypeScript for **Windows & (experimental) MacOs**.
 
 > **IMPORTANT**
 >
@@ -18,7 +18,7 @@ A desktop YouTube Music client built with Tauri, React, and TypeScript.
 > 
 >
 
-## About
+## About ℹ️
 
 JustAnotherMusicClient brings YouTube Music to the desktop in a focused, native-feeling application. YouTube does not provide an official desktop client, so this project aims to provide a polished alternative that integrates with YouTube Music while keeping the experience fast and familiar.
 
@@ -32,71 +32,43 @@ JustAnotherMusicClient brings YouTube Music to the desktop in a focused, native-
       src="assets\img\Screenshot01.png"
     >
 
-## Features
-- Create multiple music tabs, each with its own playback queue, volume, and player state.
-- Browse, search, and play music from YouTube Music.
-- Sign in to access your YouTube Music library, playlists, recommendations, and other account features.
-- Add songs to your playlists.
-- A polished desktop experience designed to work without getting in your way.
+## Features ✨
+| Feature  | Description |
+|---|---|
+| Multiple Tabs | Create multiple music tabs, each with its own playback queue, volume, and player state |
+| Caching | Playlists, lyrics, and more are cached for significantly faster performance |
+| Recommendations | Home Tab with personalized song sugesstions and a "random" shuffle wheel, just like on the mobile client |
+| Synced Lyrics | Real-time synced lyrics, not even available on the official client |
+| YouTube Music Integration | Browse, search, and play music via an integrated search bar |
+| Account Support | Sign in to access your library, playlists, recommendations, and other account features |
+| Song Management | Add songs to playlists or queue quickly via Ctrl+S or right-click |
+## Download ⏬
 
-## Download
-
-Download the newest available installer from the [latest release](https://github.com/2latemc/JustAnotherMusicClient/releases/latest).
+Download the **newest available installer** from the [latest release](https://github.com/2latemc/JustAnotherMusicClient/releases/latest) for either Windows or MacOs.
+<source
+      width="831px"
+      media="(prefers-color-scheme: dark)"
+      srcset="assets\img\Screenshot02.png"
+    >
+    <img 
+      width="831px"
+      src="assets\img\Screenshot02.png"
+    >
+    
+## Roadmap 📌
 
 ## Platform Support
 
-- Windows is the primary supported platform.
-- macOS support is experimental and may have incomplete features or platform-specific issues.
+- **Windows** is the primary supported platform.
+- **macOS** support is experimental and may have incomplete features or platform-specific issues.
+- **Linux** honestly haven't tried it. Should work if you compile it from source? If someone tries let me know!
+### MacOs Issues
+**MacOs will prompt you with a Keychain popup asking for permission** for the clients keychain folder. This is a specific folder for this application where we can store YouTube Music sign in cookies so that they are stored more securely. 
 
-## Prerequisites
-
-Install these before running the app:
-
-- Node.js LTS and npm
-- [Rust and Cargo](https://rustup.rs/)
-- Windows C++ build tools
-- Microsoft Edge WebView2 Runtime
-
-The Tauri CLI is included in the project's development dependencies. A global Tauri installation is not required.
-
-## Install
-
-```powershell
-npm install
-```
-
-## Run
-
-```powershell
-npm run tauri dev
-```
-
-## Build
-
-```powershell
-npm run tauri build
-```
-
-## Contributing
-
-Contributions are welcome. Fork the repository, create a branch for your change, test it locally, and open a pull request with a clear description of what you changed and why.
-
-By submitting a contribution, you agree to the [Contributor License Agreement](CLA.md). You retain copyright in your contribution while granting the project owner the rights needed to use, modify, distribute, commercialize, and relicense it.
-
-For larger changes, consider opening an issue first so the approach can be discussed before implementation.
-
-## Common Issues
-
-### Rust is not installed
-
-Install Rust and Cargo from [rustup.rs](https://rustup.rs/), restart your terminal, and run the command again.
-
-### WebView2 is missing
-
-Install the [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/), then run the app again.
+If you do not need signing into YouTube Music you dont need to grant Keychain permissions. If you do it is recommended to click "always allow" in the popup to prevent MacOs from being annoying 
 
 ## Third-Party Services
-If anyone from Google reads this: There was no official client, I just wanted a good desktop client. Thats why I made this, please don't sue me!
+**If anyone from Google reads this:** There was no official client, I just wanted a good desktop client. Thats why I made this, please don't sue me!
 
 The application interacts with YouTube and YouTube Music. Access to those services remains governed by their respective terms, policies, availability, and regional restrictions.
 
@@ -109,3 +81,56 @@ YouTube and YouTube Music are trademarks of Google LLC. All other trademarks are
 - [YouTube Terms of Service](https://www.youtube.com/static?template=terms)
 - [YouTube API Services Terms of Service](https://developers.google.com/youtube/terms/api-services-terms-of-service)
 - [YouTube API Services Developer Policies](https://developers.google.com/youtube/terms/developer-policies)
+
+
+
+## For Developers 🛠️
+
+### Prerequisites
+
+Install these before running the app:
+
+- Node.js LTS and npm
+- [Rust and Cargo](https://rustup.rs/)
+- Windows C++ build tools
+- Microsoft Edge WebView2 Runtime
+
+The Tauri CLI is included in the project's development dependencies. A global Tauri installation is not required.
+
+
+### Install
+
+```powershell
+npm install
+```
+
+### Run
+
+```powershell
+npm run tauri dev
+```
+
+### Build
+
+```powershell
+npm run tauri build
+```
+
+### Contributing
+
+Contributions are welcome. Fork the repository, create a branch for your change, test it locally, and open a pull request with a clear description of what you changed and why.
+
+By submitting a contribution, you agree to the [Contributor License Agreement](CLA.md). You retain copyright in your contribution while granting the project owner the rights needed to use, modify, distribute, commercialize, and relicense it.
+
+For larger changes, consider opening an issue first so the approach can be discussed before implementation.
+
+### Common Issues
+
+#### Rust is not installed
+
+Install Rust and Cargo from [rustup.rs](https://rustup.rs/), restart your terminal, and run the command again.
+
+#### WebView2 is missing
+
+Install the [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/), then run the app again.
+
