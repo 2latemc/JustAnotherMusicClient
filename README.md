@@ -54,10 +54,18 @@ Download the **newest available installer** from the [latest release](https://gi
       width="831px"
       src="assets\img\Screenshot02.png"
     >
-    
-## Roadmap 📌
 
-## Platform Support
+## Roadmap 📌
+- **Better lyrics consistency** (some songs still don't have them)
+- **Artist Pages** with monthly listeners, playlists and popular songs alongside streams amount feature when clicking on the artist name, also integrate into the search results so that one can find artists
+- **Liked songs** playlist support
+- Fix Windows media player controls sometimes not working
+
+
+- Space to pause sometimes selects elements instead of pausing / resuming
+- Cap Too long Song names and make them smoothly move vertically
+
+## Platform Support 💻
 
 - **Windows** is the primary supported platform.
 - **macOS** support is experimental and may have incomplete features or platform-specific issues.
@@ -67,7 +75,7 @@ Download the **newest available installer** from the [latest release](https://gi
 
 If you do not need signing into YouTube Music you dont need to grant Keychain permissions. If you do it is recommended to click "always allow" in the popup to prevent MacOs from being annoying 
 
-## Third-Party Services
+## Third-Party Services 
 **If anyone from Google reads this:** There was no official client, I just wanted a good desktop client. Thats why I made this, please don't sue me!
 
 The application interacts with YouTube and YouTube Music. Access to those services remains governed by their respective terms, policies, availability, and regional restrictions.
