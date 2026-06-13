@@ -57,6 +57,10 @@ const audioEngines = new Set<AudioEngine>();
 let playbackClaimId = 0;
 let playbackOwner: AudioEngine | null = null;
 
+function shouldUseNativeAudio(): boolean {
+  return /Linux/i.test(`${navigator.platform} ${navigator.userAgent}`);
+}
+
 function detectAudioMimeType(bytes: Uint8Array): string {
   if (
     bytes.length >= 4
@@ -98,7 +102,7 @@ function loadYouTubeIframeApi(): Promise<void> {
 }
 
 export class AudioEngine {
-  private readonly useNativeAudio = false;
+  private readonly useNativeAudio = shouldUseNativeAudio();
   private player: YouTubePlayer | null = null;
   private playerPromise: Promise<YouTubePlayer> | null = null;
   private audio: HTMLAudioElement | null = null;
@@ -127,7 +131,7 @@ export class AudioEngine {
   async loadTrack(videoId: string, audioData?: ArrayBuffer): Promise<void> {
     if (this.useNativeAudio) {
       if (!audioData) {
-        throw new Error("Native macOS playback requires downloaded audio data.");
+        throw new Error("Native playback requires downloaded audio data.");
       }
       await this.loadNativeAudio(videoId, audioData);
       return;
@@ -328,7 +332,7 @@ export class AudioEngine {
       };
       const handleError = () => {
         cleanup();
-        reject(new Error(`Unable to decode audio on macOS (${audio.error?.code ?? "unknown"}).`));
+        reject(new Error(`Unable to decode native audio (${audio.error?.code ?? "unknown"}).`));
       };
       audio.addEventListener("canplay", handleReady, { once: true });
       audio.addEventListener("error", handleError, { once: true });
@@ -424,6 +428,7 @@ export class AudioEngine {
           controls: 0,
           disablekb: 1,
           playsinline: 1,
+          widget_referrer: "https://music.youtube.com/",
         },
         events: {
           onReady: () => {
