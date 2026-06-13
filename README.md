@@ -20,6 +20,7 @@ If you like this project, **starring it on Github** would help A LOT!
 
 JustAnotherMusicClient brings YouTube Music to the desktop in a focused, native-feeling application. YouTube does not provide an official desktop client, so this project aims to provide a polished alternative that integrates with YouTube Music while keeping the experience fast and familiar.
 
+**Contact for legal purposes:** team@2late.org
 <source
       width="831px"
       media="(prefers-color-scheme: dark)"
@@ -69,9 +70,15 @@ Download the **newest available installer** from the [latest release](https://gi
 </a>
 
 ## Roadmap 📌
+- **Full Linux and MacOS support**
 - **Better lyrics consistency** (some songs still don't have them)
 - **Artist Pages** with monthly listeners, playlists and popular songs alongside streams amount feature when clicking on the artist name, also integrate into the search results so that one can find artists
 - **Liked songs** playlist support
+- **Discord RCP** is coming
+- **App Auto-Update** so that you don't manually have to check for changes
+- Maximize Button + An option for Windows-style window controls
+- Start App on boot option
+- Raycast support with app specific URLs
 - Fix Windows media player controls sometimes not working
 - **Music Video** support
 - Add to startup option
@@ -81,8 +88,8 @@ Download the **newest available installer** from the [latest release](https://gi
 ## Platform Support 💻
 
 - **Windows** is the primary supported platform.
-- **macOS** support is experimental and may have incomplete features or platform-specific issues.
-- **Linux** honestly haven't tried it. Should work if you compile it from source? If someone tries let me know!
+- **macOS** support is experimental, currently there are heavy playback issues on MacOS that I am actively working on.
+- **Linux** support is in the working. This should take a few days until it's implemented! 
 ### MacOs Issues
 **MacOs may prompt you with a Keychain popup asking for permission.** The app stores one encryption key in its own Keychain entry. Your YouTube Music session is encrypted with that key before it is saved in the app data directory.
 
@@ -90,6 +97,7 @@ If you do not need signing into YouTube Music you dont need to grant Keychain pe
 
 ## Third-Party Services 
 **If anyone from Google reads this:** There was no official client, I just wanted a good desktop client. Thats why I made this, please don't sue me!
+**Contact me here:** team@2late.org
 
 The application interacts with YouTube and YouTube Music. Access to those services remains governed by their respective terms, policies, availability, and regional restrictions.
 
