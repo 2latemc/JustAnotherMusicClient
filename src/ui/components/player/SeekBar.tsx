@@ -125,7 +125,8 @@ export function SeekBar() {
     const wasDragging = isDraggingRef.current;
     isPointerDownRef.current = false;
     isDraggingRef.current = false;
-    const seekTime = seekTargetRef.current;
+    const seekTime = Number(event.currentTarget.value);
+    seekTargetRef.current = seekTime;
     const animationDone = wasDragging
       ? Promise.resolve()
       : (seekAnimationPromiseRef.current ?? Promise.resolve());

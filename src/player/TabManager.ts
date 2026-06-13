@@ -22,6 +22,7 @@ const EMPTY_PLAYER_STATE: PlayerState = {
   currentTrack: null,
   history: [],
   error: null,
+  playbackOrderMode: "in-order",
 };
 
 export class TabManager {
@@ -82,6 +83,10 @@ export class TabManager {
 
   getActiveState(): PlayerState {
     return this.getEffectivePlayer()?.getState() ?? EMPTY_PLAYER_STATE;
+  }
+
+  getActiveSession(): PlayerSession | null {
+    return this.getEffectivePlayer()?.exportSession() ?? null;
   }
 
   getActivePlayerId(): MusicTabId | null {

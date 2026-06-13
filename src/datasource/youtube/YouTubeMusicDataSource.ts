@@ -979,6 +979,159 @@ export class YouTubeMusicDataSource extends DataSource {
     }
   }
 
+  async removeTrackFromPlaylist(track: Track, playlist: Playlist): Promise<void> {
+    if (!this.musicCookie) {
+      throw new Error("Sign in to YouTube Music before removing songs from playlists.");
+    }
+
+    logInternalInfo("YouTubeMusicDataSource.removeTrackFromPlaylist start", {
+      trackId: track.id,
+      playlistId: playlist.id,
+    });
+
+    try {
+      const client = await this.getMusicClient();
+      const webClient = await this.getWebClient();
+      const cacheKey = `youtube-music:playlist-tracks:v3:${playlist.id}`;
+      const basePlaylistId = playlist.id.startsWith("VL") ? playlist.id.slice(2) : playlist.id;
+
+      const candidateIds = Array.from(new Set([
+        playlist.id,
+        basePlaylistId,
+        playlist.id.replace(/^VL/, ""),
+        `PL${basePlaylistId}`,
+        `VL${basePlaylistId}`,
+      ]))
+        .filter((value) => Boolean(value));
+
+      let lastError: unknown = null;
+      let usedMethod: string | null = null;
+
+      const tryRemoveWithId = async (c: Innertube, id: string) => {
+        try {
+          if ((c.playlist as any)?.removeVideos) {
+            await (c.playlist as any).removeVideos(id, [track.id]);
+            return true;
+          }
+          if ((c.playlist as any)?.removeVideo) {
+            await (c.playlist as any).removeVideo(id, track.id);
+            return true;
+          }
+          return false;
+        } catch (error) {
+          lastError = lastError ?? error;
+          return false;
+        }
+      };
+
+      for (const id of candidateIds) {
+        logInternalInfo("YouTubeMusicDataSource.removeTrackFromPlaylist trying id", { id, trackId: track.id, playlistId: playlist.id });
+        if (await tryRemoveWithId(client, id)) {
+          usedMethod = `music.removeVideos:${id}`;
+          break;
+        }
+        if (await tryRemoveWithId(webClient, id)) {
+          usedMethod = `web.removeVideos:${id}`;
+          break;
+        }
+      }
+
+      if (!usedMethod) {
+        logInternalWarn("YouTubeMusicDataSource.removeTrackFromPlaylist removeVideos failed", {
+          candidateIds,
+          lastError: lastError instanceof Error ? lastError.message : String(lastError),
+        });
+
+        const editPlaylistPayload = {
+          actions: [
+            {
+              action: "ACTION_REMOVE_VIDEO",
+              removedVideoId: track.id,
+            },
+          ],
+          playlistId: basePlaylistId,
+        } as any;
+
+        logInternalInfo("YouTubeMusicDataSource.removeTrackFromPlaylist final-fallback edit_playlist start", {
+          playlistId: basePlaylistId,
+          trackId: track.id,
+        });
+
+        try {
+          await (client.actions as any).execute("/browse/edit_playlist", {
+            ...editPlaylistPayload,
+            parse: true,
+          });
+          usedMethod = `music.edit_playlist:${basePlaylistId}`;
+        } catch (error) {
+          logInternalWarn("YouTubeMusicDataSource.removeTrackFromPlaylist final-fallback music client failed", {
+            playlistId: basePlaylistId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          try {
+            await (webClient.actions as any).execute("/browse/edit_playlist", {
+              ...editPlaylistPayload,
+              parse: true,
+            });
+            usedMethod = `web.edit_playlist:${basePlaylistId}`;
+          } catch (webError) {
+            lastError = lastError ?? webError;
+            logInternalWarn("YouTubeMusicDataSource.removeTrackFromPlaylist final-fallback web client failed", {
+              playlistId: basePlaylistId,
+              error: webError instanceof Error ? webError.message : String(webError),
+            });
+          }
+        }
+      }
+
+      if (!usedMethod) {
+        logInternalError("YouTubeMusicDataSource.removeTrackFromPlaylist no removal method succeeded", {
+          trackId: track.id,
+          playlistId: playlist.id,
+          lastError: lastError instanceof Error ? lastError.message : String(lastError),
+        });
+        if (lastError instanceof Error) throw lastError;
+        throw new Error("Playlist remove method unavailable");
+      }
+
+      logInternalInfo("YouTubeMusicDataSource.removeTrackFromPlaylist usedMethod", {
+        usedMethod,
+        trackId: track.id,
+        playlistId: playlist.id,
+      });
+
+      let updatedTracks: Track[] | null = null;
+      for (const delayMs of [0, 500, 1500]) {
+        if (delayMs > 0) {
+          await new Promise<void>((resolve) => globalThis.setTimeout(resolve, delayMs));
+        }
+
+        const confirmedTracks = await this.collectPlaylistTracks(client, playlist.id);
+        if (!confirmedTracks.some((item) => item.id === track.id)) {
+          updatedTracks = confirmedTracks;
+          break;
+        }
+      }
+
+      if (!updatedTracks) {
+        throw new Error("YouTube Music did not confirm the playlist update.");
+      }
+
+      await setCachedJson(cacheKey, updatedTracks);
+      logInternalInfo("YouTubeMusicDataSource.removeTrackFromPlaylist success", {
+        trackId: track.id,
+        playlistId: playlist.id,
+      });
+    } catch (error) {
+      logInternalError("YouTubeMusicDataSource.removeTrackFromPlaylist failed", error, {
+        trackId: track.id,
+        playlistId: playlist.id,
+      });
+      if (error instanceof Error) throw error;
+      throw new Error("YouTube Music could not remove this song from the playlist: " + String(error));
+    }
+  }
+
   async getTrack(id: string): Promise<Track> {
     const trackId = id;
     if (!trackId) throw new Error("A track id is required.");

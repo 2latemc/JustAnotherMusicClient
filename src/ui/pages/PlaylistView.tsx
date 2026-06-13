@@ -66,6 +66,10 @@ export function PlaylistView({ playlist, playerController, libraryController }: 
     if (started) markPlaylistPlayed(playlist.id);
   };
 
+  const removeTrackFromList = (removedTrack: Track) => {
+    setTracks((current) => current.filter((item) => item.id !== removedTrack.id));
+  };
+
   return (
     <div className={styles.root}>
       <header className={styles.header}>
@@ -109,7 +113,10 @@ export function PlaylistView({ playlist, playerController, libraryController }: 
             <button
               key={track.id}
               className={styles.track}
-              onContextMenu={(event) => openTrackMenu(event, track)}
+              onContextMenu={(event) => openTrackMenu(event, track, {
+                playlist,
+                onRemove: removeTrackFromList,
+              })}
               onClick={() => void playPlaylistTrack(track)}
             >
               <span className={styles.trackIndex}>{index + 1}</span>

@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { IconPlayerPlay } from "@tabler/icons-react";
+import { IconArrowsShuffle, IconPlayerPlay, IconPlaylist, IconRepeatOff, IconRepeatOnce } from "@tabler/icons-react";
 import { tauriFetch } from "../../../datasource/youtube/tauriFetch";
 import { TrackInfo } from "./TrackInfo";
 import { PlaybackControls } from "./PlaybackControls";
 import { SeekBar } from "./SeekBar";
 import { VolumeControl } from "./VolumeControl";
 import { LyricsButton } from "./LyricsButton";
+import { playerController, usePlayerState } from "../../../player/playerStore";
 import styles from "./PlayerBar.module.css";
 
 interface PlayerBarProps {
   onToggleLyrics: () => void;
+  onToggleQueue: () => void;
+  isQueueOpen: boolean;
   onConnectionRestored: () => Promise<void>;
 }
 
@@ -18,7 +21,7 @@ const CONNECTION_CHECK_URLS = [
   "https://cp.cloudflare.com/generate_204",
 ];
 
-export function PlayerBar({ onToggleLyrics, onConnectionRestored }: PlayerBarProps) {
+export function PlayerBar({ onToggleLyrics, onToggleQueue, isQueueOpen, onConnectionRestored }: PlayerBarProps) {
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [isCheckingConnection, setIsCheckingConnection] = useState(false);
   const connectionCheckRef = useRef<Promise<boolean> | null>(null);
@@ -124,6 +127,13 @@ export function PlayerBar({ onToggleLyrics, onConnectionRestored }: PlayerBarPro
     }
   };
 
+  const playerState = usePlayerState();
+  const playbackOrderMode = playerState.playbackOrderMode;
+
+  const handleShuffleCycle = () => {
+    playerController.cyclePlaybackOrderMode();
+  };
+
   return (
     <>
       {!isOnline && (
@@ -162,8 +172,51 @@ export function PlayerBar({ onToggleLyrics, onConnectionRestored }: PlayerBarPro
           </div>
 
           <div className={styles.rightSection}>
-            <LyricsButton onToggle={onToggleLyrics} />
-            <VolumeControl />
+            <div className={styles.volumeControlsWrapper}>
+              <div className={styles.expandedControls}>
+                <button
+                  type="button"
+                  className={`${styles.iconButton} ${playbackOrderMode !== "in-order" ? styles.activeControl : ""}`}
+                  onClick={handleShuffleCycle}
+                  aria-label={
+                    playbackOrderMode === "repeat-one"
+                      ? "Loop current song"
+                      : playbackOrderMode === "shuffle"
+                        ? "Shuffle playback"
+                        : "Play in order"
+                  }
+                  title={
+                    playbackOrderMode === "repeat-one"
+                      ? "Repeat one"
+                      : playbackOrderMode === "shuffle"
+                        ? "Shuffle"
+                        : "In order"
+                  }
+                >
+                  {playbackOrderMode === "repeat-one" ? (
+                    <IconRepeatOnce size={18} />
+                  ) : playbackOrderMode === "shuffle" ? (
+                    <IconArrowsShuffle size={18} />
+                  ) : (
+                    <IconRepeatOff size={18} />
+                  )}
+                </button>
+
+                <LyricsButton onToggle={onToggleLyrics} />
+
+                <button
+                  type="button"
+                  className={`${styles.iconButton} ${isQueueOpen ? styles.activeControl : ""}`}
+                  onClick={onToggleQueue}
+                  aria-label={isQueueOpen ? "Close queue" : "Open queue"}
+                  title={isQueueOpen ? "Close queue" : "Open queue"}
+                >
+                  <IconPlaylist size={18} />
+                </button>
+              </div>
+
+              <VolumeControl />
+            </div>
           </div>
         </div>
       </div>

@@ -22,6 +22,7 @@ export abstract class DataSource {
     track: Track,
     playlist: Playlist,
   ): Promise<"added" | "already-present">;
+  removeTrackFromPlaylist?(track: Track, playlist: Playlist): Promise<void>;
   getRecommendations?(seed: Track, onUpdate?: (tracks: Track[]) => void): Promise<Track[]>;
   getLyrics?(track: Track): Promise<Lyrics | null>;
 }

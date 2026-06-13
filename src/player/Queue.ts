@@ -89,4 +89,34 @@ export class Queue {
     this.manualQueueLength = 0;
     return this.current;
   }
+
+  removeAt(index: number): void {
+    if (index < 0 || index >= this.items.length) return;
+
+    const manualQueueStart = this.index + 1;
+    const manualQueueEnd = this.index + 1 + this.manualQueueLength;
+    const removedFromManual = index >= manualQueueStart && index < manualQueueEnd;
+
+    this.items.splice(index, 1);
+
+    if (removedFromManual) {
+      this.manualQueueLength = Math.max(0, this.manualQueueLength - 1);
+    }
+
+    if (index <= this.index) {
+      this.index = Math.max(0, this.index - 1);
+    }
+  }
+
+  nextRandom(): Track | null {
+    if (this.items.length <= 1) return null;
+    const candidates = this.items
+      .map((track, index) => ({ track, index }))
+      .filter(({ index }) => index !== this.index);
+    if (candidates.length === 0) return null;
+    const nextChoice = candidates[Math.floor(Math.random() * candidates.length)];
+    this.index = nextChoice.index;
+    this.manualQueueLength = 0;
+    return this.current;
+  }
 }

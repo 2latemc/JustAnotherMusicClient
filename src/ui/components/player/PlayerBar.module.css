@@ -139,6 +139,68 @@
   gap: 6px;
 }
 
+.volumeControlsWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.expandedControls {
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  transform: translate(14px, -50%) scale(0.92);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-right: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease, transform 180ms ease;
+  white-space: nowrap;
+}
+
+.volumeControlsWrapper:hover .expandedControls,
+.volumeControlsWrapper:focus-within .expandedControls {
+  opacity: 1;
+  transform: translate(0, -50%) scale(1);
+  pointer-events: auto;
+}
+
+.iconButton {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: color 120ms ease, background-color 120ms ease, transform 100ms ease, border-color 120ms ease;
+}
+
+.iconButton:hover:not(:disabled) {
+  color: var(--color-text-primary);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.iconButton:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.iconButton:disabled {
+  opacity: 0.28;
+  cursor: not-allowed;
+}
+
+.activeControl {
+  color: var(--color-text-primary);
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
 /* Responsive adjustments */
 @media (max-width: 800px) {
   .controlsRow {

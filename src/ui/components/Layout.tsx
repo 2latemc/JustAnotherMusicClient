@@ -16,6 +16,7 @@ interface LayoutProps {
   showSearchBar: boolean;
   onOpenSearch: () => void;
   fullBleedContent?: boolean;
+  rightPanel?: ReactNode;
 }
 
 export function Layout({ 
@@ -28,6 +29,7 @@ export function Layout({
   showSearchBar,
   onOpenSearch,
   fullBleedContent = false,
+  rightPanel,
 }: LayoutProps) {
   const paperPcMode = usePaperPcMode();
 
@@ -45,8 +47,15 @@ export function Layout({
           {showSearchBar && (
             <SearchBar onOpen={onOpenSearch} onOpenSettings={onOpenSettings} />
           )}
-          <div className={`${styles.pageContent} ${fullBleedContent ? styles.fullBleedContent : ""}`}>
-            {children}
+          <div className={styles.contentContainer}>
+            <div className={`${styles.pageContent} ${fullBleedContent ? styles.fullBleedContent : ""}`}>
+              {children}
+            </div>
+            {rightPanel && (
+              <div className={styles.rightPanel}>
+                {rightPanel}
+              </div>
+            )}
           </div>
         </div>
       </div>

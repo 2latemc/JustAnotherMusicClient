@@ -11,6 +11,7 @@ import { SearchOverlay } from "./components/SearchOverlay";
 import { TrackContextMenuProvider } from "./components/TrackContextMenu";
 import { TitleBar } from "./components/TitleBar";
 import { PlayerBar } from "./components/player/PlayerBar";
+import { QueuePanel } from "./components/player/QueuePanel";
 import { Layout } from "./components/Layout";
 import { Tab } from "./types/tab";
 import { hasPrimaryModifierOnly } from "./platform";
@@ -63,6 +64,8 @@ export default function App() {
   const [onboardingStep, setOnboardingStep] = useState<OnboardingStep | null>(() =>
     localStorage.getItem(ONBOARDING_COMPLETE_KEY) === "true" ? null : "open-search"
   );
+  const [isQueuePanelOpen, setIsQueuePanelOpen] = useState(false);
+  const [showQueueMounted, setShowQueueMounted] = useState(false);
   const [onboardingFirstTabId, setOnboardingFirstTabId] = useState(activeTabId);
   const [onboardingSecondTabId, setOnboardingSecondTabId] = useState<string | null>(null);
   const [, setOnboardingSearchQuery] = useState("");
@@ -185,6 +188,7 @@ export default function App() {
 
   const handleNavigateAlbum = (album: Album) => {
     playerUIStore.setLyricsOpen(false);
+    setIsQueuePanelOpen(false);
     setTabs((prevTabs) =>
       prevTabs.map((tab) =>
         tab.id === activeTabId
@@ -200,6 +204,7 @@ export default function App() {
 
   const handleNavigatePlaylist = (playlist: Playlist) => {
     playerUIStore.setLyricsOpen(false);
+    setIsQueuePanelOpen(false);
     setTabs((prevTabs) =>
       prevTabs.map((tab) =>
         tab.id === activeTabId
@@ -405,6 +410,7 @@ export default function App() {
 
   const handleSwitchTab = (tabId: string) => {
     playerUIStore.setLyricsOpen(false);
+    setIsQueuePanelOpen(false);
     const tab = tabs.find((item) => item.id === tabId);
     if (tab?.view !== "settings") {
       void tabManager.setActive(tabId);
@@ -521,6 +527,21 @@ export default function App() {
     }
     playerUIStore.setLyricsOpen(true);
   };
+
+  const handleToggleQueue = () => {
+    // Toggle asynchronously to avoid triggering synchronous store updates
+    // during React commit phase which can cause "Maximum update depth".
+    setTimeout(() => setIsQueuePanelOpen((current) => !current), 0);
+  };
+
+  useEffect(() => {
+    if (isQueuePanelOpen) {
+      // Mount the panel after commit to avoid nested update loops
+      const id = window.setTimeout(() => setShowQueueMounted(true), 0);
+      return () => window.clearTimeout(id);
+    }
+    setShowQueueMounted(false);
+  }, [isQueuePanelOpen]);
 
   const handleKeychainNoticeContinue = () => {
     localStorage.setItem(KEYCHAIN_NOTICE_COMPLETE_KEY, "true");
@@ -650,6 +671,7 @@ export default function App() {
           showSearchBar={activeTab?.view !== "settings" && !playerUIState.isLyricsOpen}
           onOpenSearch={() => setIsSearchOpen(true)}
           fullBleedContent={playerUIState.isLyricsOpen}
+          rightPanel={showQueueMounted ? <QueuePanel onClose={() => setIsQueuePanelOpen(false)} /> : undefined}
         >
           {playerUIState.isLyricsOpen && activeTab?.view !== "settings" ? (
             <LyricsView onClose={() => playerUIStore.setLyricsOpen(false)} />
@@ -702,6 +724,8 @@ export default function App() {
       </div>
       <PlayerBar
         onToggleLyrics={handleToggleLyrics}
+        onToggleQueue={handleToggleQueue}
+        isQueueOpen={isQueuePanelOpen}
         onConnectionRestored={handleConnectionRestored}
       />
       <SearchOverlay
@@ -721,16 +745,19 @@ export default function App() {
       {loadingScreenState !== "hidden" && (
         <AppLoadingScreen isLeaving={loadingScreenState === "leaving"} />
       )}
-        {showKeychainNotice && (
-          <KeychainNotice onContinue={handleKeychainNoticeContinue} />
-        )}
-        {loadingScreenState === "hidden" && showOnboardingWelcome && (
-          <OnboardingWelcome />
-        )}
-        {loadingScreenState === "hidden" && !showOnboardingWelcome && onboardingStep && (
-          <Onboarding step={onboardingStep} onSkip={finishOnboarding} />
-        )}
-        {showOnboardingComplete && <OnboardingCompleteToast />}
+      {showKeychainNotice ? (
+        <KeychainNotice onContinue={handleKeychainNoticeContinue} />
+      ) : (
+        <>
+          {loadingScreenState === "hidden" && showOnboardingWelcome && (
+            <OnboardingWelcome />
+          )}
+          {loadingScreenState === "hidden" && !showOnboardingWelcome && onboardingStep && (
+            <Onboarding step={onboardingStep} onSkip={finishOnboarding} />
+          )}
+          {showOnboardingComplete && <OnboardingCompleteToast />}
+        </>
+      )}
     </div>
     </TrackContextMenuProvider>
   );

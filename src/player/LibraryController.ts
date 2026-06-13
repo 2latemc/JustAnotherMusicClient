@@ -160,6 +160,21 @@ export class LibraryController {
     return this.dataSource.addTrackToPlaylist(track, playlist);
   }
 
+  async removeTrackFromPlaylist(track: Track, playlist: Playlist): Promise<void> {
+    if (!this.dataSource.removeTrackFromPlaylist) {
+      logInternalError("LibraryController.removeTrackFromPlaylist unavailable", {
+        dataSource: this.dataSource.constructor.name,
+        trackId: track.id,
+        playlistId: playlist.id,
+      });
+      throw new Error("Removing songs from playlists is unavailable.");
+    }
+    if (this.state.status === "signed-out" || !this.state.library) {
+      throw new Error("Sign in to YouTube Music before removing songs from playlists.");
+    }
+    return this.dataSource.removeTrackFromPlaylist(track, playlist);
+  }
+
   private setFailure(message: string, error: unknown) {
     logInternalError("LibraryController operation failed", error);
     this.setState({ status: "error", error: message, authPrompt: null });
