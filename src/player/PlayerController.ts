@@ -3,6 +3,7 @@ import type { Lyrics, Track } from "../datasource/types";
 import { logInternalDebug, logInternalError, logInternalInfo, logInternalWarn } from "../internal/logging";
 import { AudioEngine } from "./AudioEngine";
 import { Queue } from "./Queue";
+import { DiscordRpcService } from "./DiscordRPC";
 
 export type PlaybackOrderMode = "in-order" | "shuffle" | "repeat-one";
 
@@ -28,6 +29,7 @@ export interface PlayerSession {
   muted: boolean;
   autoplayEnabled: boolean;
   playbackOrderMode: PlaybackOrderMode;
+  isPlaylistMode?: boolean;
 }
 
 type Listener = () => void;
@@ -52,6 +54,7 @@ export class PlayerController {
   private radioQueueRequestId = 0;
   private navigationRequest: Promise<void> = Promise.resolve();
   private playbackOrderMode: PlaybackOrderMode = "in-order";
+  private isPlaylistMode = false;
 
   private state: PlayerState = {
     status: "idle",
@@ -93,6 +96,7 @@ export class PlayerController {
       muted: this.audioEngine.isMuted(),
       autoplayEnabled: this.autoplayEnabled,
       playbackOrderMode: this.playbackOrderMode,
+      isPlaylistMode: this.isPlaylistMode,
     };
   }
 
@@ -110,6 +114,7 @@ export class PlayerController {
     this.audioEngine.setVolume(session.volume);
     this.audioEngine.setMuted(session.muted);
     this.playbackOrderMode = normalizePlaybackOrderMode(session.playbackOrderMode);
+    this.isPlaylistMode = session.isPlaylistMode ?? false;
     this.state = {
       status: session.currentTrack ? session.status : "idle",
       currentTrack: session.currentTrack,
@@ -158,6 +163,10 @@ export class PlayerController {
         const startIndex = playbackQueue.findIndex((track) => track.id === videoId);
         this.queue.set([...playbackQueue], startIndex >= 0 ? startIndex : 0);
         this.autoplayEnabled = autoplayWhenQueueEnds;
+        this.isPlaylistMode = !autoplayWhenQueueEnds && playbackQueue.length > 1;
+        if (this.isPlaylistMode) {
+          this.queue.setSourceTracks([...playbackQueue]);
+        }
       }
 
       const track = await this.dataSource.getTrack(videoId);
@@ -278,17 +287,30 @@ export class PlayerController {
   }
 
   setPlaybackOrderMode(mode: PlaybackOrderMode): void {
+    const wasShuffle = this.playbackOrderMode === "shuffle";
     this.playbackOrderMode = mode;
+    if (mode === "shuffle" && this.isPlaylistMode) {
+      this.queue.shuffleRemaining(this.queue.queuedManually);
+    } else if (wasShuffle && this.isPlaylistMode) {
+      this.queue.restoreOriginalOrder(this.queue.queuedManually);
+    }
     this.setState({ playbackOrderMode: mode });
   }
 
   cyclePlaybackOrderMode(): void {
-    const nextMode: PlaybackOrderMode = this.playbackOrderMode === "in-order"
-      ? "shuffle"
-      : this.playbackOrderMode === "shuffle"
+    if (this.isPlaylistMode) {
+      const nextMode: PlaybackOrderMode = this.playbackOrderMode === "in-order"
+        ? "shuffle"
+        : this.playbackOrderMode === "shuffle"
+          ? "repeat-one"
+          : "in-order";
+      this.setPlaybackOrderMode(nextMode);
+    } else {
+      const nextMode: PlaybackOrderMode = this.playbackOrderMode === "shuffle"
         ? "repeat-one"
-        : "in-order";
-    this.setPlaybackOrderMode(nextMode);
+        : "shuffle";
+      this.setPlaybackOrderMode(nextMode);
+    }
   }
 
   addToQueue(track: Track): void {
@@ -334,9 +356,7 @@ export class PlayerController {
 
   private async skipToNextNow(): Promise<void> {
     const shouldResume = this.state.status === "playing";
-    const nextTrack = this.playbackOrderMode === "shuffle"
-      ? this.queue.nextRandom()
-      : this.queue.next(false);
+    const nextTrack = this.queue.next(false);
     if (
       (!nextTrack || nextTrack.id === this.state.currentTrack?.id)
       && this.autoplayEnabled
@@ -357,6 +377,7 @@ export class PlayerController {
       nextTrackId: nextTrack?.id ?? null,
     });
     if (!nextTrack || nextTrack.id === this.state.currentTrack?.id) return;
+    this.refillAutomaticQueue();
     if (shouldResume) {
       await this.playTrackById(nextTrack.id);
     } else {
@@ -374,14 +395,10 @@ export class PlayerController {
         return;
       }
 
-      let nextTrack: Track | null = null;
-      if (this.playbackOrderMode === "shuffle") {
-        nextTrack = this.queue.nextRandom();
-      } else {
-        nextTrack = this.queue.next(false);
-      }
+      const nextTrack = this.queue.next(false);
 
       if (nextTrack && nextTrack.id !== this.state.currentTrack?.id) {
+        this.refillAutomaticQueue();
         await this.playTrackById(nextTrack.id);
         return;
       }
@@ -404,6 +421,32 @@ export class PlayerController {
       this.setError(error);
     } finally {
       this.handlingTrackEnd = false;
+    }
+  }
+
+  private refillAutomaticQueue(): void {
+    if (this.queue.remainingAutomatic >= 10) return;
+
+    if (this.isPlaylistMode) {
+      const sourceTracks = this.queue.getSourceTracks();
+      if (sourceTracks.length === 0) return;
+
+      const needCount = 15 - this.queue.remainingAutomatic;
+      const fill: Track[] = [];
+      for (let i = 0; fill.length < needCount; i += 1) {
+        fill.push(sourceTracks[i % sourceTracks.length]);
+      }
+      this.queue.appendAutomaticTracks(fill);
+      logInternalInfo("PlayerController.refillAutomaticQueue", {
+        mode: "playlist",
+        addedCount: fill.length,
+        totalAutomatic: this.queue.remainingAutomatic,
+      });
+      return;
+    }
+
+    if (this.autoplayEnabled && this.state.currentTrack) {
+      void this.primeRadioQueue(this.state.currentTrack, this.playTrackRequestId);
     }
   }
 
@@ -559,6 +602,44 @@ export class PlayerController {
   private emit() {
     for (const listener of this.listeners) {
       listener();
+    }
+    
+    // Update Discord RPC presence
+    this.updateDiscordPresence();
+  }
+
+  private updateDiscordPresence() {
+    const currentTrack = this.state.currentTrack;
+    logInternalDebug("updateDiscordPresence", { status: this.state.status, hasTrack: !!currentTrack });
+    
+    // Clear presence if idle or error
+    if (this.state.status === "idle" || this.state.status === "error" || !currentTrack) {
+      logInternalDebug("Discord.clearPresence", {});
+      void DiscordRpcService.clearPresence();
+      return;
+    }
+
+    // Update presence with current track info
+    if (this.state.status === "playing" || this.state.status === "paused") {
+      const currentTime = this.loadedTrackId === currentTrack.id 
+        ? this.audioEngine.getCurrentTime() 
+        : (this.pendingSeekTime ?? 0);
+
+      logInternalDebug("Discord.updatePresence", {
+        title: currentTrack.title,
+        artist: currentTrack.artist,
+        status: this.state.status,
+      });
+
+      void DiscordRpcService.updatePresence({
+        title: currentTrack.title,
+        artist: currentTrack.artist,
+        album: currentTrack.title, // Use title as album since Track doesn't have album field
+        artworkUrl: currentTrack.artworkUrl,
+        duration: Math.floor(currentTrack.durationSec ?? 0),
+        currentTime: Math.floor(Math.max(0, currentTime)),
+        isPlaying: this.state.status === "playing",
+      });
     }
   }
 

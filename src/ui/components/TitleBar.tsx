@@ -1,5 +1,5 @@
 import { IconLayoutDashboard } from "@tabler/icons-react";
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import styles from "./TitleBar.module.css";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
@@ -42,16 +42,20 @@ export function TitleBar({
     startY: number;
   } | null>(null);
   const suppressHomeClickRef = useRef(false);
+  const hideHomeText = sidebarWidth <= 120;
+
+  const homeButtonClasses = useMemo(() => [
+    styles.homeButton,
+    isHomeActive ? styles.homeButtonActive : "",
+    isLinux ? styles.homeButtonLinux : "",
+    hideHomeText ? styles.homeButtonIconOnly : "",
+  ].filter(Boolean).join(" "), [isHomeActive, isLinux, hideHomeText]);
 
   return (
     <div className={styles.root}>
       <button
         type="button"
-        className={[
-          styles.homeButton,
-          isHomeActive ? styles.homeButtonActive : "",
-          isLinux ? styles.homeButtonLinux : "",
-        ].filter(Boolean).join(" ")}
+        className={homeButtonClasses}
         style={{ width: `${sidebarWidth}px` }}
         onClick={() => {
           if (suppressHomeClickRef.current) {
@@ -97,7 +101,7 @@ export function TitleBar({
         aria-current={isHomeActive ? "page" : undefined}
       >
         <IconLayoutDashboard size={18} aria-hidden="true" />
-        <span>Home</span>
+        {!hideHomeText && <span>Home</span>}
       </button>
 
       <MusicTabs

@@ -21,6 +21,8 @@ use rand::{rngs::OsRng, RngCore};
 #[cfg(target_os = "windows")]
 mod windows_media;
 
+mod discord_rpc;
+
 // Keep the legacy service name so existing sign-in credentials survive the product rename.
 const KEYRING_SERVICE: &str = "com.ytmusicdock.app";
 const KEYRING_USER: &str = "youtube-oauth";
@@ -1618,10 +1620,74 @@ async fn proxy_http_request(input: ProxyHttpRequestInput) -> Result<ProxyHttpRes
     })
 }
 
+#[tauri::command]
+fn discord_rpc_update(
+    discord_manager: tauri::State<'_, std::sync::Arc<std::sync::Mutex<discord_rpc::DiscordRpcManager>>>,
+    title: String,
+    artist: String,
+    album: String,
+    artwork_url: Option<String>,
+    duration: u64,
+    current_time: u64,
+    is_playing: bool,
+) -> Result<(), CommandError> {
+    let data = discord_rpc::DiscordPresenceData {
+        title,
+        artist,
+        album,
+        artwork_url,
+        duration,
+        current_time,
+        is_playing,
+    };
+
+    match discord_manager.lock() {
+        Ok(manager) => {
+            if let Err(e) = manager.update_presence(data) {
+                eprintln!("[internal][discord_rpc] failed to update presence: {}", e);
+                // Don't return error - Discord might not be running
+            }
+        }
+        Err(e) => {
+            eprintln!("[internal][discord_rpc] failed to lock manager: {}", e);
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn discord_rpc_clear(
+    discord_manager: tauri::State<'_, std::sync::Arc<std::sync::Mutex<discord_rpc::DiscordRpcManager>>>,
+) -> Result<(), CommandError> {
+    match discord_manager.lock() {
+        Ok(manager) => {
+            if let Err(e) = manager.clear_presence() {
+                eprintln!("[internal][discord_rpc] failed to clear presence: {}", e);
+            }
+        }
+        Err(e) => {
+            eprintln!("[internal][discord_rpc] failed to lock manager: {}", e);
+        }
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Initialize Discord RPC manager
+    let discord_manager = std::sync::Arc::new(std::sync::Mutex::new(discord_rpc::DiscordRpcManager::new()));
+    
+    // Try to connect to Discord immediately
+    if let Ok(manager) = discord_manager.lock() {
+        if let Err(e) = manager.connect() {
+            eprintln!("[internal][discord_rpc] failed to initialize Discord connection: {}", e);
+            // This is not fatal - Discord might not be running, try again later
+        }
+    }
+
     let builder = tauri::Builder::default()
         .manage(CacheLock(Mutex::new(())))
+        .manage(discord_manager)
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .plugin(tauri_plugin_opener::init());
 
@@ -1659,6 +1725,8 @@ pub fn run() {
             cache_stats,
             cache_set_max_bytes,
             cache_clear,
+            discord_rpc_update,
+            discord_rpc_clear,
             #[cfg(target_os = "windows")]
             windows_media::update_windows_media_session
         ])

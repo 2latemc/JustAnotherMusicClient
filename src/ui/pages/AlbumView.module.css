@@ -33,13 +33,12 @@
   font: inherit;
   font-weight: var(--font-weight-semibold);
   cursor: pointer;
-  transition:
-    background-color var(--transition-fast),
-    opacity var(--transition-fast);
 }
 
 .shuffleButton:hover:not(:disabled) {
-  background: var(--color-accent-hover);
+  background: var(--color-bg);
+  outline: 2px solid var(--color-accent-hover);
+  outline-offset: -2px;
 }
 
 .shuffleButton:disabled {

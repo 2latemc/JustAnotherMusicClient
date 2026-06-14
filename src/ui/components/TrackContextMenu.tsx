@@ -534,7 +534,7 @@ export function TrackContextMenuProvider({
             />
           ) : toast === "Already in playlist" ? (
             <IconX size={16} aria-hidden="true" />
-          ) : (toast.startsWith("Added ") || toast === "Link copied" || toast.startsWith("Removed from ")) && (
+          ) : (toast.startsWith("Added ") || toast.includes("will play next") || toast === "Link copied" || toast.startsWith("Removed from ")) && (
             <IconCheck size={18} aria-hidden="true" />
           )}
           <span>{toast}</span>

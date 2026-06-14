@@ -71,7 +71,6 @@ export default function App() {
   const [onboardingStep, setOnboardingStep] = useState<OnboardingStep | null>(() =>
     localStorage.getItem(ONBOARDING_COMPLETE_KEY) === "true" ? null : "open-search"
   );
-  const [isQueuePanelOpen, setIsQueuePanelOpen] = useState(false);
   const [showQueueMounted, setShowQueueMounted] = useState(false);
   const [onboardingFirstTabId, setOnboardingFirstTabId] = useState(activeTabId);
   const [onboardingSecondTabId, setOnboardingSecondTabId] = useState<string | null>(null);
@@ -93,6 +92,21 @@ export default function App() {
   sessionStateRef.current = { tabs, activeTabId, nextTabId };
 
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
+  const isQueuePanelOpen = activeTab?.isQueueOpen ?? false;
+
+  const setIsQueuePanelOpen = useCallback(
+    (open: boolean) => {
+      setTabs((prevTabs) =>
+        prevTabs.map((tab) =>
+          tab.id === activeTabId
+            ? { ...tab, isQueueOpen: open }
+            : tab
+        )
+      );
+    },
+    [activeTabId],
+  );
+
   useMediaSession(playerState, playerController);
   const activeViewKey = [
     activeTabId,
@@ -199,7 +213,6 @@ export default function App() {
 
   const handleNavigateAlbum = (album: Album) => {
     playerUIStore.setLyricsOpen(false);
-    setIsQueuePanelOpen(false);
     setTabs((prevTabs) =>
       prevTabs.map((tab) =>
         tab.id === activeTabId
@@ -215,7 +228,6 @@ export default function App() {
 
   const handleNavigatePlaylist = (playlist: Playlist) => {
     playerUIStore.setLyricsOpen(false);
-    setIsQueuePanelOpen(false);
     setTabs((prevTabs) =>
       prevTabs.map((tab) =>
         tab.id === activeTabId
@@ -421,7 +433,6 @@ export default function App() {
 
   const handleSwitchTab = (tabId: string) => {
     playerUIStore.setLyricsOpen(false);
-    setIsQueuePanelOpen(false);
     const tab = tabs.find((item) => item.id === tabId);
     if (tab?.view !== "settings") {
       void tabManager.setActive(tabId);
@@ -574,7 +585,7 @@ export default function App() {
   const handleToggleQueue = () => {
     // Toggle asynchronously to avoid triggering synchronous store updates
     // during React commit phase which can cause "Maximum update depth".
-    setTimeout(() => setIsQueuePanelOpen((current) => !current), 0);
+    setTimeout(() => setIsQueuePanelOpen(!isQueuePanelOpen), 0);
   };
 
   useEffect(() => {

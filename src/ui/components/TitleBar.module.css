@@ -112,6 +112,10 @@
     rgb(21 21 21 / 96%);
 }
 
+.homeButtonIconOnly {
+  justify-content: center;
+}
+
 .homeButtonActive:hover::before {
   background:
     linear-gradient(90deg, rgb(255 0 51 / 17%), rgb(255 255 255 / 5%)),

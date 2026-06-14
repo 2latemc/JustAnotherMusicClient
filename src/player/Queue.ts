@@ -4,6 +4,7 @@ export class Queue {
   private items: Track[] = [];
   private index = -1;
   private manualQueueLength = 0;
+  private sourceTracks: Track[] = [];
 
   get current(): Track | null {
     return this.index >= 0 && this.index < this.items.length
@@ -32,6 +33,7 @@ export class Queue {
       Math.max(manualQueueLength, 0),
       Math.max(0, tracks.length - this.index - 1),
     );
+    this.sourceTracks = [];
   }
 
   add(track: Track): void {
@@ -54,6 +56,30 @@ export class Queue {
 
     this.items.splice(this.index + 1, 0, track);
     this.manualQueueLength += 1;
+  }
+
+  get remainingAutomatic(): number {
+    const automaticStart = this.index + 1 + this.manualQueueLength;
+    return Math.max(0, this.items.length - automaticStart);
+  }
+
+  getSourceTracks(): Track[] {
+    return this.sourceTracks;
+  }
+
+  setSourceTracks(tracks: Track[]): void {
+    this.sourceTracks = tracks;
+  }
+
+  appendAutomaticTracks(tracks: Track[]): void {
+    if (tracks.length === 0) return;
+    if (this.index < 0) {
+      this.items = tracks;
+      this.index = 0;
+      return;
+    }
+    const manualQueueEnd = this.index + 1 + this.manualQueueLength;
+    this.items = [...this.items.slice(0, manualQueueEnd), ...tracks];
   }
 
   replaceAutomaticUpcoming(tracks: Track[]): void {
@@ -142,15 +168,29 @@ export class Queue {
     this.items.splice(insertIndex, 0, track);
   }
 
-  nextRandom(): Track | null {
-    if (this.items.length <= 1) return null;
-    const candidates = this.items
-      .map((track, index) => ({ track, index }))
-      .filter(({ index }) => index !== this.index);
-    if (candidates.length === 0) return null;
-    const nextChoice = candidates[Math.floor(Math.random() * candidates.length)];
-    this.index = nextChoice.index;
-    this.manualQueueLength = 0;
-    return this.current;
+  private originalUpcoming: Track[] | null = null;
+
+  shuffleRemaining(manualCount: number): void {
+    const manualQueueEnd = this.index + 1 + manualCount;
+    const upcoming = this.items.slice(manualQueueEnd);
+    if (upcoming.length <= 1) return;
+
+    if (this.originalUpcoming === null) {
+      this.originalUpcoming = [...upcoming];
+    }
+
+    for (let i = upcoming.length - 1; i > 0; i -= 1) {
+      const swapIndex = Math.floor(Math.random() * (i + 1));
+      [upcoming[i], upcoming[swapIndex]] = [upcoming[swapIndex], upcoming[i]];
+    }
+
+    this.items = [...this.items.slice(0, manualQueueEnd), ...upcoming];
+  }
+
+  restoreOriginalOrder(manualCount: number): void {
+    if (!this.originalUpcoming) return;
+    const manualQueueEnd = this.index + 1 + manualCount;
+    this.items = [...this.items.slice(0, manualQueueEnd), ...this.originalUpcoming];
+    this.originalUpcoming = null;
   }
 }

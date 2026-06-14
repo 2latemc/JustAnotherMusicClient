@@ -9,4 +9,5 @@ export interface Tab {
   searchQuery?: string;
   searchResults?: Track[];
   searchLoading?: boolean;
+  isQueueOpen?: boolean;
 }
