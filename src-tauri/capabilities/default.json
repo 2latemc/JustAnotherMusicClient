@@ -22,7 +22,7 @@
     }
   },
   "remote": {
-    "urls": ["https://**"]
+    "urls": ["https://**", "http://localhost/**", "http://127.0.0.1/**"]
   },
   "command": {
     "allow": [

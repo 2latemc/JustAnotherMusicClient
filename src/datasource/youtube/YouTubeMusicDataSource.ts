@@ -757,6 +757,7 @@ export class YouTubeMusicDataSource extends DataSource {
       });
       this.musicAccountIndex = 0;
       this.musicClientPromise = null;
+      this.libraryRefreshPromise = null;
       await this.getMusicClient();
       logInternalInfo("YouTubeMusicDataSource.restoreSession success");
       return true;
@@ -786,6 +787,7 @@ export class YouTubeMusicDataSource extends DataSource {
     });
     this.musicAccountIndex = 0;
     this.musicClientPromise = null;
+    this.libraryRefreshPromise = null;
     await this.getMusicClient();
     logInternalInfo("YouTubeMusicDataSource.signIn success");
   }
@@ -804,6 +806,7 @@ export class YouTubeMusicDataSource extends DataSource {
     this.musicCookie = null;
     this.musicAccountIndex = 0;
     this.musicClientPromise = null;
+    this.libraryRefreshPromise = null;
     logInternalInfo("YouTubeMusicDataSource.signOut success");
   }
 

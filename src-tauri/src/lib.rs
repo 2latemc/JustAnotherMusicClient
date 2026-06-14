@@ -8,7 +8,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+#[cfg(not(debug_assertions))]
+use portpicker::pick_unused_port;
 use tauri::Manager;
+use tauri::utils::config::FrontendDist;
+use tauri::utils::config_v1::WindowUrl;
 
 #[cfg(target_os = "macos")]
 use aes_gcm::{
@@ -910,7 +914,41 @@ async fn fetch_audio_bytes(url: String, track_id: String) -> Result<Vec<u8>, Com
         "[internal][tauri][info] fetch_audio_bytes start url={} track_id={}",
         url, track_id
     );
-    let response = reqwest::Client::new()
+    let request_url = url::Url::parse(&url).map_err(|error| CommandError {
+        message: format!("invalid URL: {error}"),
+    })?;
+
+    let mut client_builder = reqwest::Client::builder();
+
+    if request_url
+        .host_str()
+        .is_some_and(|host| host.ends_with(".googlevideo.com"))
+    {
+        let signed_ip = request_url
+            .query_pairs()
+            .find_map(|(key, value)| (key == "ip").then(|| value.parse::<IpAddr>().ok()).flatten());
+
+        if let Some(signed_ip) = signed_ip {
+            let local_address = match signed_ip {
+                IpAddr::V4(_) => IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+                IpAddr::V6(_) => IpAddr::V6(Ipv6Addr::UNSPECIFIED),
+            };
+            eprintln!(
+                "[internal][tauri][info] fetch_audio_bytes forcing signed IP family url={} family={}",
+                request_url.path(),
+                if signed_ip.is_ipv6() { "ipv6" } else { "ipv4" }
+            );
+            client_builder = client_builder.local_address(local_address);
+        }
+    }
+
+    let client = client_builder
+        .build()
+        .map_err(|error| CommandError {
+            message: format!("HTTP client creation failed: {error}"),
+        })?;
+
+    let response = client
         .get(&url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
         .header("Accept", "*/*")
@@ -1410,8 +1448,41 @@ async fn try_youtube_api(
         audio_url.chars().take(200).collect::<String>()
     );
 
-    // Download the audio
-    let mut audio_request = client
+    // Build a client with IP family binding for googlevideo URLs
+    let audio_url_parsed = url::Url::parse(&audio_url).map_err(|error| CommandError {
+        message: format!("invalid audio URL: {error}"),
+    })?;
+
+    let mut audio_client_builder = reqwest::Client::builder();
+    if audio_url_parsed
+        .host_str()
+        .is_some_and(|host| host.ends_with(".googlevideo.com"))
+    {
+        let signed_ip = audio_url_parsed
+            .query_pairs()
+            .find_map(|(key, value)| (key == "ip").then(|| value.parse::<IpAddr>().ok()).flatten());
+
+        if let Some(signed_ip) = signed_ip {
+            let local_address = match signed_ip {
+                IpAddr::V4(_) => IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+                IpAddr::V6(_) => IpAddr::V6(Ipv6Addr::UNSPECIFIED),
+            };
+            eprintln!(
+                "[internal][tauri][info] try_youtube_api forcing signed IP family url={} family={}",
+                audio_url_parsed.path(),
+                if signed_ip.is_ipv6() { "ipv6" } else { "ipv4" }
+            );
+            audio_client_builder = audio_client_builder.local_address(local_address);
+        }
+    }
+
+    let audio_client = audio_client_builder
+        .build()
+        .map_err(|error| CommandError {
+            message: format!("audio HTTP client creation failed: {error}"),
+        })?;
+
+    let mut audio_request = audio_client
         .get(&audio_url)
         .header("User-Agent", user_agent)
         .header("Accept", "*/*")
@@ -1423,14 +1494,12 @@ async fn try_youtube_api(
         audio_request = audio_request.header("X-Goog-Visitor-Id", visitor_data);
     }
 
-    if !attempt_name.contains("iOS") && !attempt_name.contains("ANDROID") {
-        audio_request = audio_request
-            .header("Referer", referer)
-            .header("Origin", referer.trim_end_matches('/'))
-            .header("Sec-Fetch-Dest", "audio")
-            .header("Sec-Fetch-Mode", "no-cors")
-            .header("Sec-Fetch-Site", "cross-site");
-    }
+    audio_request = audio_request
+        .header("Referer", referer)
+        .header("Origin", referer.trim_end_matches('/'))
+        .header("Sec-Fetch-Dest", "audio")
+        .header("Sec-Fetch-Mode", "no-cors")
+        .header("Sec-Fetch-Site", "cross-site");
 
     let audio_response = audio_request
         .send()
@@ -1685,11 +1754,24 @@ pub fn run() {
         }
     }
 
-    let builder = tauri::Builder::default()
+    let mut context = tauri::generate_context!();
+    let mut builder = tauri::Builder::default()
         .manage(CacheLock(Mutex::new(())))
         .manage(discord_manager)
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .plugin(tauri_plugin_opener::init());
+
+    #[cfg(not(debug_assertions))]
+    {
+        let port = pick_unused_port().expect("failed to find an unused localhost port");
+        let url: url::Url = format!("http://localhost:{}", port)
+            .parse()
+            .expect("failed to parse localhost url");
+        let _window_url = WindowUrl::External(url.clone());
+
+        context.config_mut().build.frontend_dist = Some(FrontendDist::Url(url));
+        builder = builder.plugin(tauri_plugin_localhost::Builder::new(port).build());
+    }
 
     #[cfg(target_os = "windows")]
     let builder = builder.manage(windows_media::WindowsMediaSession::new());
@@ -1730,7 +1812,7 @@ pub fn run() {
             #[cfg(target_os = "windows")]
             windows_media::update_windows_media_session
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running tauri application");
 }
 
