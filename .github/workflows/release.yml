@@ -19,7 +19,7 @@ jobs:
             os: windows-latest
             bundles: msi,nsis
             rust_target: ""
-            build_args: --bundles msi,nsis
+            build_args: --bundles msi,nsis,portable
             apple_signing_identity: ""
           - name: macOS Apple Silicon
             os: macos-latest
