@@ -278,12 +278,33 @@
   font-size: var(--font-size-sm);
 }
 
+.updateResult {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding-top: var(--spacing-lg);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.updateMessage {
+  margin: var(--spacing-lg) 0 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
 .toggleRow {
   display: flex;
   align-items: center;
   gap: var(--spacing-md);
   padding-top: var(--spacing-lg);
   cursor: pointer;
+}
+
+.toggleRowDisabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .toggleDescription {
@@ -375,5 +396,10 @@
   .dangerButton,
   .githubButton {
     width: 100%;
+  }
+
+  .updateResult {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

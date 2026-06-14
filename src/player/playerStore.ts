@@ -36,7 +36,13 @@ type PlayerControllerMethod =
   | "getVolume"
   | "isMuted"
   | "toggleMute"
-  | "getLyrics";
+  | "getPlaybackOrderMode"
+  | "cyclePlaybackOrderMode"
+  | "getLyrics"
+  | "getPlayerSession"
+  | "removeFromQueueAt"
+  | "playQueueTrackAt"
+  | "moveQueueTrack";
 
 export type PlayerControllerActions = Pick<PlayerController, PlayerControllerMethod>;
 
@@ -68,8 +74,18 @@ class ActivePlayerController implements PlayerControllerActions {
   getVolume = () => tabManager.getActivePlayer().getVolume();
   isMuted = () => tabManager.getActivePlayer().isMuted();
   toggleMute = () => tabManager.getActivePlayer().toggleMute();
+  getPlaybackOrderMode = () => tabManager.getActivePlayer().getPlaybackOrderMode();
+  cyclePlaybackOrderMode = () => tabManager.getActivePlayer().cyclePlaybackOrderMode();
   getLyrics = (track: Parameters<PlayerController["getLyrics"]>[0]) =>
     tabManager.getActivePlayer().getLyrics(track);
+  getPlayerSession = () => tabManager.getActivePlayer().exportSession();
+  removeFromQueueAt = (index: number) => tabManager.getActivePlayer().removeFromQueueAt(index);
+  playQueueTrackAt = (index: number) => tabManager.getActivePlayer().playQueueTrackAt(index);
+  moveQueueTrack = (
+    sourceIndex: number,
+    targetIndex: number,
+    insertAfter: boolean,
+  ) => tabManager.getActivePlayer().moveQueueTrack(sourceIndex, targetIndex, insertAfter);
 }
 
 export const playerController: PlayerControllerActions = new ActivePlayerController();
@@ -79,6 +95,14 @@ export function usePlayerState() {
     (listener) => tabManager.subscribe(listener),
     () => tabManager.getActiveState(),
     () => tabManager.getActiveState(),
+  );
+}
+
+export function usePlayerSession() {
+  return useSyncExternalStore(
+    (listener) => tabManager.subscribe(listener),
+    () => tabManager.getActiveSession(),
+    () => tabManager.getActiveSession(),
   );
 }
 

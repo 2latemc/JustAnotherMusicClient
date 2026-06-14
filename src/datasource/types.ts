@@ -7,6 +7,7 @@ export interface Track {
   artist: string;
   durationSec?: number;
   artworkUrl?: string;
+  playlistItemId?: string;
 }
 
 export interface LyricLine {
@@ -33,6 +34,7 @@ export interface Playlist {
   title: string;
   owner: string;
   artworkUrl?: string;
+  kind?: "playlist" | "liked-songs";
 }
 
 export interface AuthPrompt {
@@ -50,5 +52,7 @@ export interface LibrarySnapshot {
   account: AccountProfile;
   albums: Album[];
   playlists: Playlist[];
+  likedSongsPlaylist: Playlist;
+  likedSongs: Track[];
   recentlyPlayed: Track[];
 }

@@ -1,0 +1,108 @@
+.toast {
+  position: fixed;
+  top: calc(var(--titlebar-height) + 18px);
+  right: 20px;
+  z-index: 320;
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 9px 8px 18px;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: var(--radius-lg);
+  background: rgb(17 17 17 / 94%);
+  box-shadow:
+    0 18px 48px rgb(0 0 0 / 46%),
+    inset 0 1px 0 rgb(255 255 255 / 5%);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  animation: toastIn 220ms var(--easing-smooth) both;
+}
+
+.toast strong {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+}
+
+.downloadButton {
+  min-height: 36px;
+  padding: 0 15px;
+  border: 1px solid #ff315a;
+  border-radius: var(--radius-md);
+  background: var(--color-accent);
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  box-shadow:
+    0 0 12px rgb(255 0 51 / 58%),
+    0 0 28px rgb(255 0 51 / 24%);
+  transition:
+    background var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.downloadButton:hover {
+  background: #ff1746;
+  box-shadow:
+    0 0 16px rgb(255 0 51 / 76%),
+    0 0 34px rgb(255 0 51 / 34%);
+  transform: translateY(-1px);
+}
+
+.downloadButton:active {
+  transform: translateY(0);
+}
+
+.closeButton {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    color var(--transition-fast),
+    opacity var(--transition-fast);
+}
+
+.toast:hover .closeButton,
+.closeButton:focus-visible {
+  opacity: 1;
+}
+
+.closeButton:hover {
+  color: #fff;
+}
+
+.closeButton:focus-visible {
+  outline: none;
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
+}

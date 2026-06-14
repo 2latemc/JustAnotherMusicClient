@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useState } from "react";
-import { IconArrowsShuffle, IconPlayerPlay, IconPlaylist } from "@tabler/icons-react";
+import { IconArrowsShuffle, IconHeart, IconPlayerPlay, IconPlaylist } from "@tabler/icons-react";
 import type { Playlist, Track } from "../../datasource/types";
 import type { LibraryController } from "../../player/LibraryController";
 import type { PlayerControllerActions } from "../../player/playerStore";
 import { markPlaylistPlayed } from "../../player/recentPlaylists";
 import { shuffleTracks } from "../../player/shuffleTracks";
 import { useTrackContextMenu } from "../components/TrackContextMenu";
+import { useLibraryState } from "../../player/playerStore";
 import styles from "./AlbumView.module.css";
 
 interface PlaylistViewProps {
@@ -16,6 +17,7 @@ interface PlaylistViewProps {
 
 export function PlaylistView({ playlist, playerController, libraryController }: PlaylistViewProps) {
   const { openTrackMenu } = useTrackContextMenu();
+  const libraryState = useLibraryState();
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -30,6 +32,14 @@ export function PlaylistView({ playlist, playerController, libraryController }: 
   useEffect(() => {
     if (!playlist) return;
     let active = true;
+    const isLikedSongs = playlist.kind === "liked-songs" || playlist.id === "LM";
+    const currentLibrary = libraryController.getState().library;
+    if (isLikedSongs && currentLibrary) {
+      setTracks(currentLibrary.likedSongs);
+      setIsLoading(false);
+      setError(null);
+      return;
+    }
     setTracks([]);
     setIsLoading(true);
     setError(null);
@@ -50,6 +60,13 @@ export function PlaylistView({ playlist, playerController, libraryController }: 
     };
   }, [playlist, libraryController]);
 
+  useEffect(() => {
+    if (playlist?.kind !== "liked-songs" && playlist?.id !== "LM") return;
+    if (!libraryState.library) return;
+    setTracks(libraryState.library.likedSongs);
+    setIsLoading(false);
+  }, [libraryState.library?.likedSongs, playlist?.id, playlist?.kind]);
+
   if (!playlist) return null;
 
   const playPlaylistTrack = async (track: Track) => {
@@ -66,21 +83,35 @@ export function PlaylistView({ playlist, playerController, libraryController }: 
     if (started) markPlaylistPlayed(playlist.id);
   };
 
+  const removeTrackFromList = (removedTrack: Track) => {
+    setTracks((current) => current.filter((item) =>
+      playlist.kind === "liked-songs" || playlist.id === "LM"
+        ? item.id !== removedTrack.id
+        : item.playlistItemId !== removedTrack.playlistItemId
+    ));
+  };
+
   return (
     <div className={styles.root}>
       <header className={styles.header}>
         <div className={`${styles.cover} ${styles.coverFrame}`}>
-          {(!playlist.artworkUrl || artworkFailed) && (
-            <IconPlaylist size={80} aria-hidden="true" />
-          )}
-          {playlist.artworkUrl && !artworkFailed && (
-            <img
-              className={`${styles.coverImage} ${artworkLoaded ? styles.coverImageLoaded : ""}`}
-              src={playlist.artworkUrl}
-              alt=""
-              onLoad={() => setArtworkLoaded(true)}
-              onError={() => setArtworkFailed(true)}
-            />
+          {playlist.kind === "liked-songs" || playlist.id === "LM" ? (
+            <IconHeart size={80} stroke={1.6} aria-hidden="true" />
+          ) : (
+            <>
+              {(!playlist.artworkUrl || artworkFailed) && (
+              <IconPlaylist size={80} aria-hidden="true" />
+              )}
+              {playlist.artworkUrl && !artworkFailed && (
+                <img
+                  className={`${styles.coverImage} ${artworkLoaded ? styles.coverImageLoaded : ""}`}
+                  src={playlist.artworkUrl}
+                  alt=""
+                  onLoad={() => setArtworkLoaded(true)}
+                  onError={() => setArtworkFailed(true)}
+                />
+              )}
+            </>
           )}
         </div>
         <div className={styles.headerText}>
@@ -107,9 +138,12 @@ export function PlaylistView({ playlist, playerController, libraryController }: 
         <div className={styles.trackList}>
           {tracks.map((track, index) => (
             <button
-              key={track.id}
+              key={track.playlistItemId ?? `${track.id}:${index}`}
               className={styles.track}
-              onContextMenu={(event) => openTrackMenu(event, track)}
+              onContextMenu={(event) => openTrackMenu(event, track, {
+                playlist,
+                onRemove: removeTrackFromList,
+              })}
               onClick={() => void playPlaylistTrack(track)}
             >
               <span className={styles.trackIndex}>{index + 1}</span>

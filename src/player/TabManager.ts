@@ -22,6 +22,7 @@ const EMPTY_PLAYER_STATE: PlayerState = {
   currentTrack: null,
   history: [],
   error: null,
+  playbackOrderMode: "in-order",
 };
 
 export class TabManager {
@@ -30,6 +31,7 @@ export class TabManager {
   private playbackOwnerId: MusicTabId | null = null;
   private readonly playerUnsubscribes = new Map<MusicTabId, () => void>();
   private readonly listeners = new Set<Listener>();
+  private activeSessionSnapshot: PlayerSession | null | undefined;
 
   get active(): MusicTab | null {
     return this.activeId ? this.tabs.get(this.activeId) ?? null : null;
@@ -82,6 +84,13 @@ export class TabManager {
 
   getActiveState(): PlayerState {
     return this.getEffectivePlayer()?.getState() ?? EMPTY_PLAYER_STATE;
+  }
+
+  getActiveSession(): PlayerSession | null {
+    if (this.activeSessionSnapshot === undefined) {
+      this.activeSessionSnapshot = this.getEffectivePlayer()?.exportSession() ?? null;
+    }
+    return this.activeSessionSnapshot;
   }
 
   getActivePlayerId(): MusicTabId | null {
@@ -190,6 +199,7 @@ export class TabManager {
   }
 
   private emit(): void {
+    this.activeSessionSnapshot = undefined;
     for (const listener of this.listeners) {
       listener();
     }

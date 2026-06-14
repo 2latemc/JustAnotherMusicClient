@@ -4,6 +4,8 @@ import { logInternalDebug, logInternalError, logInternalInfo, logInternalWarn } 
 import { AudioEngine } from "./AudioEngine";
 import { Queue } from "./Queue";
 
+export type PlaybackOrderMode = "in-order" | "shuffle" | "repeat-one";
+
 export type PlayerStatus = "idle" | "loading" | "playing" | "paused" | "error";
 
 export interface PlayerState {
@@ -11,6 +13,7 @@ export interface PlayerState {
   currentTrack: Track | null;
   history: Track[];
   error: string | null;
+  playbackOrderMode: PlaybackOrderMode;
 }
 
 export interface PlayerSession {
@@ -24,9 +27,16 @@ export interface PlayerSession {
   volume: number;
   muted: boolean;
   autoplayEnabled: boolean;
+  playbackOrderMode: PlaybackOrderMode;
 }
 
 type Listener = () => void;
+
+function normalizePlaybackOrderMode(mode: unknown): PlaybackOrderMode {
+  if (mode === "shuffle") return "shuffle";
+  if (mode === "repeat-one" || mode === "repeat-all") return "repeat-one";
+  return "in-order";
+}
 
 export class PlayerController {
   private readonly audioEngine = new AudioEngine();
@@ -41,12 +51,14 @@ export class PlayerController {
   private pendingSeekTime: number | null = null;
   private radioQueueRequestId = 0;
   private navigationRequest: Promise<void> = Promise.resolve();
+  private playbackOrderMode: PlaybackOrderMode = "in-order";
 
   private state: PlayerState = {
     status: "idle",
     currentTrack: null,
     history: [],
     error: null,
+    playbackOrderMode: "in-order",
   };
 
   constructor(private readonly dataSource: DataSource) {
@@ -80,6 +92,7 @@ export class PlayerController {
       volume: this.audioEngine.getVolume(),
       muted: this.audioEngine.isMuted(),
       autoplayEnabled: this.autoplayEnabled,
+      playbackOrderMode: this.playbackOrderMode,
     };
   }
 
@@ -96,11 +109,13 @@ export class PlayerController {
     this.pendingSeekTime = Math.max(0, session.positionSec);
     this.audioEngine.setVolume(session.volume);
     this.audioEngine.setMuted(session.muted);
+    this.playbackOrderMode = normalizePlaybackOrderMode(session.playbackOrderMode);
     this.state = {
       status: session.currentTrack ? session.status : "idle",
       currentTrack: session.currentTrack,
       history: session.history,
       error: null,
+      playbackOrderMode: this.playbackOrderMode,
     };
     this.emit();
   }
@@ -154,6 +169,7 @@ export class PlayerController {
         history: this.appendHistory(track),
         status: "loading",
         error: null,
+        playbackOrderMode: this.playbackOrderMode,
       });
       if (autoplayWhenQueueEnds && playbackQueue?.length === 1) {
         void this.primeRadioQueue(track, requestId);
@@ -202,7 +218,7 @@ export class PlayerController {
       }
 
       const isResumingLoadedTrack = this.loadedTrackId === track.id;
-      if (!isResumingLoadedTrack) {
+      if (!isResumingLoadedTrack || this.state.status === "error") {
         this.setState({ status: "loading", error: null });
       }
 
@@ -212,12 +228,17 @@ export class PlayerController {
         if (isResumingLoadedTrack) {
           this.setState({ status: "playing", error: null });
         }
-        if (!await playbackStarted) return;
+        if (!await playbackStarted) {
+          this.setState({ status: "paused", error: null });
+          return;
+        }
+        if (!isResumingLoadedTrack) {
+          this.setState({ status: "playing", error: null });
+        }
+      } else {
+        this.setState({ status: "paused", error: null });
       }
 
-      if (!isResumingLoadedTrack) {
-        this.setState({ status: "playing", error: null });
-      }
       logInternalInfo("PlayerController.play success", { trackId: track.id });
     } catch (error) {
       this.setError(error);
@@ -252,6 +273,24 @@ export class PlayerController {
     return this.queueNavigation(() => this.skipToNextNow());
   }
 
+  getPlaybackOrderMode(): PlaybackOrderMode {
+    return this.playbackOrderMode;
+  }
+
+  setPlaybackOrderMode(mode: PlaybackOrderMode): void {
+    this.playbackOrderMode = mode;
+    this.setState({ playbackOrderMode: mode });
+  }
+
+  cyclePlaybackOrderMode(): void {
+    const nextMode: PlaybackOrderMode = this.playbackOrderMode === "in-order"
+      ? "shuffle"
+      : this.playbackOrderMode === "shuffle"
+        ? "repeat-one"
+        : "in-order";
+    this.setPlaybackOrderMode(nextMode);
+  }
+
   addToQueue(track: Track): void {
     this.queue.add(track);
     this.emit();
@@ -270,15 +309,48 @@ export class PlayerController {
     });
   }
 
+  removeFromQueueAt(index: number): void {
+    this.queue.removeAt(index);
+    this.emit();
+    logInternalInfo("PlayerController.removeFromQueueAt", { index });
+  }
+
+  async playQueueTrackAt(index: number): Promise<boolean> {
+    const track = this.queue.select(index);
+    if (!track) return false;
+    this.emit();
+    return this.playTrackById(track.id);
+  }
+
+  moveQueueTrack(sourceIndex: number, targetIndex: number, insertAfter: boolean): void {
+    this.queue.move(sourceIndex, targetIndex, insertAfter);
+    this.emit();
+    logInternalInfo("PlayerController.moveQueueTrack", {
+      sourceIndex,
+      targetIndex,
+      insertAfter,
+    });
+  }
+
   private async skipToNextNow(): Promise<void> {
     const shouldResume = this.state.status === "playing";
-    let nextTrack = this.queue.next();
+    const nextTrack = this.playbackOrderMode === "shuffle"
+      ? this.queue.nextRandom()
+      : this.queue.next(false);
     if (
       (!nextTrack || nextTrack.id === this.state.currentTrack?.id)
       && this.autoplayEnabled
       && this.state.currentTrack
     ) {
-      nextTrack = await this.loadRadioQueue(this.state.currentTrack);
+      const radioTrack = await this.loadRadioQueue(this.state.currentTrack);
+      if (radioTrack) {
+        if (shouldResume) {
+          await this.playTrackById(radioTrack.id);
+        } else {
+          await this.loadTrack(radioTrack);
+        }
+      }
+      return;
     }
     logInternalInfo("PlayerController.skipToNext", {
       currentTrackId: this.state.currentTrack?.id ?? null,
@@ -297,7 +369,18 @@ export class PlayerController {
     this.handlingTrackEnd = true;
 
     try {
-      const nextTrack = this.queue.next(false);
+      if (this.playbackOrderMode === "repeat-one" && this.state.currentTrack) {
+        await this.playTrackById(this.state.currentTrack.id);
+        return;
+      }
+
+      let nextTrack: Track | null = null;
+      if (this.playbackOrderMode === "shuffle") {
+        nextTrack = this.queue.nextRandom();
+      } else {
+        nextTrack = this.queue.next(false);
+      }
+
       if (nextTrack && nextTrack.id !== this.state.currentTrack?.id) {
         await this.playTrackById(nextTrack.id);
         return;
@@ -480,8 +563,30 @@ export class PlayerController {
   }
 
   async seekTo(time: number): Promise<void> {
-    logInternalInfo("PlayerController.seekTo", { time });
-    this.audioEngine.seekTo(time);
+    const seekTime = Math.max(0, time);
+    logInternalInfo("PlayerController.seekTo", { time: seekTime, loadedTrackId: this.loadedTrackId, currentTrackId: this.state.currentTrack?.id });
+
+    const currentTrack = this.state.currentTrack;
+    if (!currentTrack) {
+      logInternalWarn("PlayerController.seekTo no current track");
+      return;
+    }
+
+    if (this.loadedTrackId !== currentTrack.id) {
+      logInternalInfo("PlayerController.seekTo track not loaded, loading...", { trackId: currentTrack.id });
+      this.pendingSeekTime = seekTime;
+      try {
+        await this.ensureTrackLoaded(currentTrack);
+      } catch (error) {
+        this.setError(error);
+      }
+      this.emit();
+      return;
+    }
+
+    logInternalInfo("PlayerController.seekTo track already loaded, seeking...");
+    this.audioEngine.seekTo(seekTime);
+    this.emit();
   }
 
   async setVolume(level: number): Promise<void> {
@@ -557,6 +662,10 @@ export class PlayerController {
 
   getCurrentTime(): number {
     return this.audioEngine.getCurrentTime();
+  }
+
+  getPlayerSession(): PlayerSession {
+    return this.exportSession();
   }
 
   getDuration(): number {

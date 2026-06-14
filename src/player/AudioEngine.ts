@@ -435,6 +435,8 @@ export class AudioEngine {
           autoplay: 0,
           controls: 0,
           disablekb: 1,
+          enablejsapi: 1,
+          origin: window.location.origin,
           playsinline: 1,
           widget_referrer: "https://music.youtube.com/",
         },

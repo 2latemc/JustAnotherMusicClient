@@ -5,12 +5,18 @@ import {
   IconLogin,
   IconLogout,
   IconLeaf,
+  IconRocket,
   IconRefresh,
   IconStar,
   IconTrash,
   IconUser,
 } from "@tabler/icons-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import {
+  checkForUpdates,
+  getInstalledVersion,
+  type UpdateInfo,
+} from "../../internal/updateChecker";
 import {
   clearCache,
   DEFAULT_CACHE_SIZE_GB,
@@ -19,6 +25,10 @@ import {
   type CacheStats,
 } from "../../internal/cache";
 import type { LibraryController, LibraryState } from "../../player/LibraryController";
+import {
+  getAutostartEnabled,
+  setAutostartEnabled,
+} from "../settings/autostart";
 import { setPaperPcMode, usePaperPcMode } from "../settings/paperPcMode";
 import styles from "./SettingsPage.module.css";
 
@@ -42,6 +52,14 @@ export function SettingsPage({
   const [cacheSizeGb, setCacheSizeGb] = useState(DEFAULT_CACHE_SIZE_GB.toString());
   const [cacheBusy, setCacheBusy] = useState(false);
   const [cacheError, setCacheError] = useState<string | null>(null);
+  const [installedVersion, setInstalledVersion] = useState<string | null>(null);
+  const [updateResult, setUpdateResult] = useState<UpdateInfo | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<
+    "idle" | "checking" | "current" | "error"
+  >("idle");
+  const [autostartEnabled, setAutostartEnabledState] = useState(false);
+  const [autostartLoading, setAutostartLoading] = useState(true);
+  const [autostartError, setAutostartError] = useState<string | null>(null);
   const paperPcMode = usePaperPcMode();
   const account = libraryState.library?.account;
   const isSignedIn = libraryState.status === "ready" && account;
@@ -64,6 +82,62 @@ export function SettingsPage({
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    void getInstalledVersion()
+      .then((version) => {
+        if (active) setInstalledVersion(version);
+      })
+      .catch(() => {
+        if (active) setInstalledVersion("Unknown");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleCheckForUpdates = async () => {
+    setUpdateStatus("checking");
+    setUpdateResult(null);
+    try {
+      const update = await checkForUpdates();
+      setUpdateResult(update);
+      setUpdateStatus(update ? "idle" : "current");
+    } catch {
+      setUpdateStatus("error");
+    }
+  };
+
+  useEffect(() => {
+    let active = true;
+    void getAutostartEnabled()
+      .then((enabled) => {
+        if (active) setAutostartEnabledState(enabled);
+      })
+      .catch(() => {
+        if (active) setAutostartError("Unable to load the startup setting.");
+      })
+      .finally(() => {
+        if (active) setAutostartLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleAutostartChange = async (enabled: boolean) => {
+    setAutostartLoading(true);
+    setAutostartError(null);
+    try {
+      await setAutostartEnabled(enabled);
+      setAutostartEnabledState(enabled);
+    } catch {
+      setAutostartError("Unable to update the startup setting.");
+    } finally {
+      setAutostartLoading(false);
+    }
+  };
 
   const saveCacheSize = async () => {
     const sizeGb = Number(cacheSizeGb);
@@ -239,6 +313,33 @@ export function SettingsPage({
         {cacheError && <p className={styles.error}>{cacheError}</p>}
       </section>
 
+      <section className={styles.card} aria-labelledby="startup-settings-title">
+        <div className={styles.cardHeader}>
+          <div>
+            <h2 id="startup-settings-title">Startup</h2>
+            <p>Control whether the app opens automatically when you sign in.</p>
+          </div>
+          <IconRocket className={styles.cardIcon} size={22} />
+        </div>
+
+        <label className={`${styles.toggleRow} ${autostartLoading ? styles.toggleRowDisabled : ""}`}>
+          <span className={styles.toggleDescription}>
+            <strong>Launch at startup</strong>
+            <span>Start Just Another Music Client when your computer starts.</span>
+          </span>
+          <input
+            className={styles.toggleInput}
+            type="checkbox"
+            checked={autostartEnabled}
+            disabled={autostartLoading}
+            onChange={(event) => void handleAutostartChange(event.target.checked)}
+          />
+          <span className={styles.toggle} aria-hidden="true" />
+        </label>
+
+        {autostartError && <p className={styles.error}>{autostartError}</p>}
+      </section>
+
       <section className={styles.card} aria-labelledby="performance-settings-title">
         <div className={styles.cardHeader}>
           <div>
@@ -261,6 +362,48 @@ export function SettingsPage({
           />
           <span className={styles.toggle} aria-hidden="true" />
         </label>
+      </section>
+
+      <section className={styles.card} aria-labelledby="update-settings-title">
+        <div className={styles.cardHeader}>
+          <div>
+            <h2 id="update-settings-title">Updates</h2>
+            <p>
+              Installed version: {
+                installedVersion
+                  ? installedVersion === "Unknown" ? installedVersion : `v${installedVersion}`
+                  : "Loading..."
+              }
+            </p>
+          </div>
+          <button
+            className={styles.secondaryButton}
+            type="button"
+            disabled={updateStatus === "checking"}
+            onClick={() => void handleCheckForUpdates()}
+          >
+            <IconRefresh size={18} />
+            {updateStatus === "checking" ? "Checking..." : "Check for updates"}
+          </button>
+        </div>
+        {updateResult && (
+          <div className={styles.updateResult}>
+            <span>Version {updateResult.version} is available.</span>
+            <button
+              className={styles.githubButton}
+              type="button"
+              onClick={() => void openUrl(updateResult.releaseUrl)}
+            >
+              Download
+            </button>
+          </div>
+        )}
+        {updateStatus === "current" && (
+          <p className={styles.updateMessage}>You are up to date.</p>
+        )}
+        {updateStatus === "error" && (
+          <p className={styles.error}>Unable to check for updates.</p>
+        )}
       </section>
 
       <section className={styles.card} aria-labelledby="onboarding-settings-title">

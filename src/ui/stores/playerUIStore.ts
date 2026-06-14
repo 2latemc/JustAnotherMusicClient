@@ -5,6 +5,7 @@ export interface PlayerUIState {
   isDraggingVolume: boolean;
   showAlbumArt: boolean;
   isLyricsOpen: boolean;
+  isQueueOpen: boolean;
 }
 
 type Listener = () => void;
@@ -15,6 +16,7 @@ class PlayerUIStore {
     isDraggingVolume: false,
     showAlbumArt: true,
     isLyricsOpen: false,
+    isQueueOpen: false,
   };
   private listeners = new Set<Listener>();
 
@@ -56,6 +58,14 @@ class PlayerUIStore {
 
   toggleLyrics() {
     this.setState({ isLyricsOpen: !this.state.isLyricsOpen });
+  }
+
+  setQueueOpen(isQueueOpen: boolean) {
+    this.setState({ isQueueOpen });
+  }
+
+  toggleQueue() {
+    this.setState({ isQueueOpen: !this.state.isQueueOpen });
   }
 }
 

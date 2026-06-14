@@ -100,11 +100,44 @@
   min-width: 0;
 }
 
+.contentContainer {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .pageContent {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   padding: 0 56px 56px 56px;
+}
+
+.rightPanel {
+  min-width: 280px;
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.rightPanelDragHandle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+  z-index: 10;
+  transition: background var(--transition-fast);
+}
+
+.rightPanelDragHandle:hover,
+.rightPanelDragHandleActive {
+  background: var(--color-accent);
 }
 
 .pageContent::-webkit-scrollbar {

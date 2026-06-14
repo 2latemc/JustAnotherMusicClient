@@ -4,12 +4,15 @@ import {
   type ReactNode,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
 import {
   IconCheck,
+  IconHeart,
+  IconHeartFilled,
   IconLink,
   IconListDetails,
   IconLoader2,
@@ -17,10 +20,12 @@ import {
   IconPlayerTrackNext,
   IconPlaylist,
   IconSearch,
+  IconTrash,
   IconX,
 } from "@tabler/icons-react";
 import type { Playlist, Track } from "../../datasource/types";
 import type { LibraryController } from "../../player/LibraryController";
+import { logInternalError } from "../../internal/logging";
 import {
   playerController,
   useLibraryState,
@@ -35,7 +40,15 @@ interface MenuPosition {
 }
 
 interface TrackContextMenuValue {
-  openTrackMenu: (event: ReactMouseEvent, track: Track) => void;
+  openTrackMenu: (
+    event: ReactMouseEvent,
+    track: Track,
+    context?: {
+      playlist?: Playlist;
+      onRemove?: (track: Track) => void;
+    },
+  ) => void;
+  toggleTrackLike: (track: Track) => Promise<void>;
 }
 
 interface TrackContextMenuProviderProps {
@@ -59,15 +72,21 @@ export function TrackContextMenuProvider({
 }: TrackContextMenuProviderProps) {
   const libraryState = useLibraryState();
   const playerState = usePlayerState();
+  const menuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const playlistRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const toastTimerRef = useRef<number | null>(null);
   const [track, setTrack] = useState<Track | null>(null);
   const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null);
+  const [menuContext, setMenuContext] = useState<{
+    playlist?: Playlist;
+    onRemove?: (track: Track) => void;
+  } | null>(null);
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [selectedPlaylistIndex, setSelectedPlaylistIndex] = useState<number | null>(null);
   const [addingPlaylistId, setAddingPlaylistId] = useState<string | null>(null);
+  const [isRemovingTrack, setIsRemovingTrack] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -90,6 +109,34 @@ export function TrackContextMenuProvider({
       window.removeEventListener("blur", closeMenu);
     };
   }, [menuPosition]);
+
+  useLayoutEffect(() => {
+    if (!menuPosition) return;
+
+    const keepMenuInViewport = () => {
+      const menu = menuRef.current;
+      if (!menu) return;
+
+      const viewportMargin = 8;
+      const bounds = menu.getBoundingClientRect();
+      const x = Math.max(
+        viewportMargin,
+        Math.min(menuPosition.x, window.innerWidth - bounds.width - viewportMargin),
+      );
+      const y = Math.max(
+        viewportMargin,
+        Math.min(menuPosition.y, window.innerHeight - bounds.height - viewportMargin),
+      );
+
+      if (x !== menuPosition.x || y !== menuPosition.y) {
+        setMenuPosition({ x, y });
+      }
+    };
+
+    keepMenuInViewport();
+    window.addEventListener("resize", keepMenuInViewport);
+    return () => window.removeEventListener("resize", keepMenuInViewport);
+  }, [menuContext, menuPosition, track]);
 
   useEffect(() => {
     if (isPickerOpen) {
@@ -139,17 +186,22 @@ export function TrackContextMenuProvider({
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
   }, []);
 
-  const openTrackMenu = (event: ReactMouseEvent, selectedTrack: Track) => {
+  const openTrackMenu = (
+    event: ReactMouseEvent,
+    selectedTrack: Track,
+    context?: { playlist?: Playlist; onRemove?: (track: Track) => void },
+  ) => {
     event.preventDefault();
     event.stopPropagation();
     setTrack(selectedTrack);
+    setMenuContext(context ?? null);
     setIsPickerOpen(false);
     setError(null);
     setQuery("");
     setSelectedPlaylistIndex(null);
     setMenuPosition({
-      x: Math.max(8, Math.min(event.clientX, window.innerWidth - 258)),
-      y: Math.max(8, Math.min(event.clientY, window.innerHeight - 192)),
+      x: event.clientX,
+      y: event.clientY,
     });
   };
 
@@ -203,6 +255,44 @@ export function TrackContextMenuProvider({
     setIsPickerOpen(true);
   };
 
+  const removeFromPlaylist = async () => {
+    if (!track || !menuContext?.playlist || addingPlaylistId || isRemovingTrack) return;
+
+    const selectedTrack = track;
+    const playlist = menuContext.playlist;
+
+    setIsRemovingTrack(true);
+    setError(null);
+    setMenuPosition(null);
+    showPersistentToast("Removing...");
+
+    try {
+      if (playlist.kind === "liked-songs" || playlist.id === "LM") {
+        await libraryController.setTrackLiked(selectedTrack, false);
+      } else {
+        await libraryController.removeTrackFromPlaylist(selectedTrack, playlist);
+      }
+      menuContext.onRemove?.(selectedTrack);
+      showToast(
+        playlist.kind === "liked-songs" || playlist.id === "LM"
+          ? "Removed from Liked Songs"
+          : `Removed from ${playlist.title}`,
+      );
+    } catch (removeError) {
+      logInternalError("TrackContextMenu.removeFromPlaylist failed", removeError, {
+        trackId: selectedTrack.id,
+        playlistId: playlist.id,
+        playlistTitle: playlist.title,
+      });
+      showToast(
+        removeError instanceof Error ? removeError.message : "Unable to remove this song.",
+        4000,
+      );
+    } finally {
+      setIsRemovingTrack(false);
+    }
+  };
+
   const handlePickerKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (addingPlaylistId || playlists.length === 0) return;
 
@@ -247,12 +337,40 @@ export function TrackContextMenuProvider({
     }
   };
 
+  const toggleTrackLike = async (selectedTrack: Track) => {
+    if (libraryState.status === "signed-out" || !libraryState.library) {
+      showToast("Sign in to like");
+      return;
+    }
+    if (libraryState.pendingLikeTrackIds.has(selectedTrack.id)) return;
+
+    const shouldLike = !libraryController.isTrackLiked(selectedTrack.id);
+    showPersistentToast(shouldLike ? "Liking..." : "Removing like...");
+    try {
+      await libraryController.setTrackLiked(selectedTrack, shouldLike);
+      showToast(shouldLike ? "Added to Liked Songs" : "Removed from Liked Songs");
+    } catch (likeError) {
+      showToast(
+        likeError instanceof Error ? likeError.message : "Unable to update this like.",
+        4000,
+      );
+    }
+  };
+
+  const selectedTrackIsLiked = track
+    ? libraryState.library?.likedSongs.some((item) => item.id === track.id) ?? false
+    : false;
+  const isLikeMutationPending = track
+    ? libraryState.pendingLikeTrackIds.has(track.id)
+    : false;
+
   return (
-    <TrackContextMenuContext.Provider value={{ openTrackMenu }}>
+    <TrackContextMenuContext.Provider value={{ openTrackMenu, toggleTrackLike }}>
       {children}
 
       {menuPosition && track && (
         <div
+          ref={menuRef}
           className={styles.contextMenu}
           style={{ left: menuPosition.x, top: menuPosition.y }}
           role="menu"
@@ -271,10 +389,41 @@ export function TrackContextMenuProvider({
             <span className={styles.menuLabel}>Add to playlist</span>
             <kbd>Ctrl S</kbd>
           </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              if (!track) return;
+              setMenuPosition(null);
+              void toggleTrackLike(track);
+            }}
+          >
+            {selectedTrackIsLiked ? (
+              <IconHeartFilled size={18} aria-hidden="true" />
+            ) : (
+              <IconHeart size={18} aria-hidden="true" />
+            )}
+            <span className={styles.menuLabel}>
+              {selectedTrackIsLiked ? "Remove like" : "Like song"}
+            </span>
+          </button>
           <button type="button" role="menuitem" onClick={() => void copyLink()}>
             <IconLink size={18} aria-hidden="true" />
             <span className={styles.menuLabel}>Copy link</span>
           </button>
+          {menuContext?.playlist
+            && menuContext.playlist.kind !== "liked-songs"
+            && menuContext.playlist.id !== "LM" && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => void removeFromPlaylist()}
+              disabled={Boolean(addingPlaylistId || isRemovingTrack)}
+            >
+              <IconTrash size={18} aria-hidden="true" />
+              <span className={styles.menuLabel}>Remove from playlist</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -377,7 +526,7 @@ export function TrackContextMenuProvider({
 
       {toast && (
         <div className={styles.toast} role="status">
-          {addingPlaylistId ? (
+          {addingPlaylistId || isRemovingTrack || isLikeMutationPending ? (
             <IconLoader2
               className={styles.toastLoadingIcon}
               size={18}
@@ -385,7 +534,7 @@ export function TrackContextMenuProvider({
             />
           ) : toast === "Already in playlist" ? (
             <IconX size={16} aria-hidden="true" />
-          ) : (toast.startsWith("Added ") || toast === "Link copied") && (
+          ) : (toast.startsWith("Added ") || toast === "Link copied" || toast.startsWith("Removed from ")) && (
             <IconCheck size={18} aria-hidden="true" />
           )}
           <span>{toast}</span>
