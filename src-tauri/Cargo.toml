@@ -1,6 +1,6 @@
 [package]
 name = "just-another-music-client"
-version = "1.2.2"
+version = "1.2.3"
 description = "A desktop music client"
 authors = ["you"]
 edition = "2021"

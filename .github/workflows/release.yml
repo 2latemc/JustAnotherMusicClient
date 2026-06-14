@@ -19,7 +19,7 @@ jobs:
             os: windows-latest
             bundles: msi,nsis
             rust_target: ""
-            build_args: --bundles msi,nsis,portable
+            build_args: --bundles msi,nsis
             apple_signing_identity: ""
           - name: macOS Apple Silicon
             os: macos-latest
@@ -85,7 +85,7 @@ jobs:
 
             ${{ steps.release_metadata.outputs.notify_marker }}
 
-            Windows: download the `.msi` or NSIS setup `.exe`.
+            Windows: download the `.msi` or NSIS setup `.exe`, or the portable `.exe` (no install needed).
             macOS: download the Apple Silicon `.dmg` for M-series Macs or the
             Intel `.dmg` for older Intel Macs.
 
@@ -102,6 +102,14 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.platform.build_args }}
+
+      - name: Upload Windows portable exe
+        if: matrix.platform.name == 'Windows'
+        shell: bash
+        run: |
+          gh release upload ${{ github.ref_name }} "src-tauri/target/release/just-another-music-client.exe#Just-Another-Music-Client-Windows-portable.exe" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Verify macOS DMG and app signature
         if: startsWith(matrix.platform.name, 'macOS')
