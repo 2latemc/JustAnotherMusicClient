@@ -53,12 +53,11 @@ export class DiscordRpcService {
         isPlaying: data.isPlaying,
       });
 
-      logInternalDebug("Discord.updatePresence.success", {});
+       logInternalDebug("Discord.updatePresence.success", {});
     } catch (error) {
-      logInternalWarn("Discord.updatePresence.failed", error);
+      logInternalWarn("Discord.updatePresence.failed", error as Record<string, unknown>);
     }
   }
-
   /**
    * Clear Discord presence (show as idle)
    */
@@ -72,7 +71,7 @@ export class DiscordRpcService {
       await invoke("discord_rpc_clear");
       logInternalDebug("Discord.clearPresence.success", {});
     } catch (error) {
-      logInternalWarn("Discord.clearPresence.failed", error);
+      logInternalWarn("Discord.clearPresence.failed", error as Record<string, unknown>);
     }
   }
 }
