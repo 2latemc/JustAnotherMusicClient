@@ -8,6 +8,7 @@ export interface LibraryState {
   status: LibraryStatus;
   authPrompt: AuthPrompt | null;
   library: LibrarySnapshot | null;
+  pendingLikeTrackIds: ReadonlySet<string>;
   error: string | null;
 }
 
@@ -20,6 +21,7 @@ export class LibraryController {
     status: "restoring",
     authPrompt: null,
     library: null,
+    pendingLikeTrackIds: new Set(),
     error: null,
   };
 
@@ -108,6 +110,7 @@ export class LibraryController {
         status: "signed-out",
         authPrompt: null,
         library: null,
+        pendingLikeTrackIds: new Set(),
         error: null,
       });
     } catch (error) {
@@ -126,6 +129,7 @@ export class LibraryController {
       logInternalInfo("LibraryController.refresh success", {
         albumCount: library.albums.length,
         playlistCount: library.playlists.length,
+        likedSongCount: library.likedSongs.length,
         recentTrackCount: library.recentlyPlayed.length,
       });
     } catch (error) {
@@ -173,6 +177,43 @@ export class LibraryController {
       throw new Error("Sign in to YouTube Music before removing songs from playlists.");
     }
     return this.dataSource.removeTrackFromPlaylist(track, playlist);
+  }
+
+  isTrackLiked(trackId: string): boolean {
+    return this.state.library?.likedSongs.some((track) => track.id === trackId) ?? false;
+  }
+
+  async setTrackLiked(track: Track, liked: boolean): Promise<void> {
+    if (!this.dataSource.setTrackLiked) {
+      throw new Error("Liking songs is unavailable.");
+    }
+    if (this.state.status === "signed-out" || !this.state.library) {
+      throw new Error("Sign in to like");
+    }
+    if (this.state.pendingLikeTrackIds.has(track.id)) return;
+
+    const previousLibrary = this.state.library;
+    const pendingLikeTrackIds = new Set(this.state.pendingLikeTrackIds);
+    pendingLikeTrackIds.add(track.id);
+    const likedSongs = liked
+      ? [track, ...previousLibrary.likedSongs.filter((item) => item.id !== track.id)]
+      : previousLibrary.likedSongs.filter((item) => item.id !== track.id);
+
+    this.setState({
+      library: { ...previousLibrary, likedSongs },
+      pendingLikeTrackIds,
+    });
+
+    try {
+      await this.dataSource.setTrackLiked(track, liked);
+    } catch (error) {
+      this.setState({ library: previousLibrary });
+      throw error;
+    } finally {
+      const nextPending = new Set(this.state.pendingLikeTrackIds);
+      nextPending.delete(track.id);
+      this.setState({ pendingLikeTrackIds: nextPending });
+    }
   }
 
   private setFailure(message: string, error: unknown) {

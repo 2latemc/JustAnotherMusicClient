@@ -32,6 +32,12 @@ export interface PlayerSession {
 
 type Listener = () => void;
 
+function normalizePlaybackOrderMode(mode: unknown): PlaybackOrderMode {
+  if (mode === "shuffle") return "shuffle";
+  if (mode === "repeat-one" || mode === "repeat-all") return "repeat-one";
+  return "in-order";
+}
+
 export class PlayerController {
   private readonly audioEngine = new AudioEngine();
   private readonly queue = new Queue();
@@ -103,7 +109,7 @@ export class PlayerController {
     this.pendingSeekTime = Math.max(0, session.positionSec);
     this.audioEngine.setVolume(session.volume);
     this.audioEngine.setMuted(session.muted);
-    this.playbackOrderMode = session.playbackOrderMode ?? "in-order";
+    this.playbackOrderMode = normalizePlaybackOrderMode(session.playbackOrderMode);
     this.state = {
       status: session.currentTrack ? session.status : "idle",
       currentTrack: session.currentTrack,
@@ -218,12 +224,17 @@ export class PlayerController {
 
       await this.ensureTrackLoaded(track);
       if (this.isTabActive) {
-        const playbackStarted = await this.audioEngine.play();
-        if (!playbackStarted) {
+        const playbackStarted = this.audioEngine.play();
+        if (isResumingLoadedTrack) {
+          this.setState({ status: "playing", error: null });
+        }
+        if (!await playbackStarted) {
           this.setState({ status: "paused", error: null });
           return;
         }
-        this.setState({ status: "playing", error: null });
+        if (!isResumingLoadedTrack) {
+          this.setState({ status: "playing", error: null });
+        }
       } else {
         this.setState({ status: "paused", error: null });
       }
@@ -302,6 +313,23 @@ export class PlayerController {
     this.queue.removeAt(index);
     this.emit();
     logInternalInfo("PlayerController.removeFromQueueAt", { index });
+  }
+
+  async playQueueTrackAt(index: number): Promise<boolean> {
+    const track = this.queue.select(index);
+    if (!track) return false;
+    this.emit();
+    return this.playTrackById(track.id);
+  }
+
+  moveQueueTrack(sourceIndex: number, targetIndex: number, insertAfter: boolean): void {
+    this.queue.move(sourceIndex, targetIndex, insertAfter);
+    this.emit();
+    logInternalInfo("PlayerController.moveQueueTrack", {
+      sourceIndex,
+      targetIndex,
+      insertAfter,
+    });
   }
 
   private async skipToNextNow(): Promise<void> {

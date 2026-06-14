@@ -26,6 +26,7 @@ type MusicItem = {
   id?: string;
   title?: string | { toString(): string };
   item_type?: string;
+  menu?: unknown;
   artists?: Array<{ name?: string }>;
   authors?: Array<{ name?: string }>;
   author?: { name?: string };
@@ -75,6 +76,17 @@ type LrcLibTrack = {
   duration?: number;
   syncedLyrics?: string | null;
 };
+
+type RawLikeEndpoint = {
+  status?: string;
+  target?: string;
+  params?: string;
+  likeParams?: string;
+  removeLikeParams?: string;
+};
+
+const LIKED_SONGS_PLAYLIST_ID = "LM";
+const LIBRARY_CACHE_KEY = "youtube-music:library:v4";
 
 export class YouTubeMusicDataSource extends DataSource {
   private musicClientPromise: Promise<Innertube> | null = null;
@@ -214,6 +226,34 @@ export class YouTubeMusicDataSource extends DataSource {
     return title || null;
   }
 
+  private getPlaylistItemId(item: MusicItem): string | undefined {
+    const seen = new WeakSet<object>();
+
+    const visit = (value: unknown): string | undefined => {
+      if (!value || typeof value !== "object" || seen.has(value)) return undefined;
+      seen.add(value);
+
+      const candidate = value as {
+        action?: unknown;
+        setVideoId?: unknown;
+      };
+      if (
+        candidate.action === "ACTION_REMOVE_VIDEO"
+        && typeof candidate.setVideoId === "string"
+      ) {
+        return candidate.setVideoId;
+      }
+
+      for (const child of Object.values(value)) {
+        const result = visit(child);
+        if (result) return result;
+      }
+      return undefined;
+    };
+
+    return visit(item.menu);
+  }
+
   private toAlbum(item: MusicItem): Album | null {
     const id = item.id ?? item.endpoint?.payload?.browseId;
     const title = this.getTitle(item);
@@ -252,6 +292,7 @@ export class YouTubeMusicDataSource extends DataSource {
       title,
       artist: this.getArtist(item),
       artworkUrl: this.getArtwork(item) ?? getVideoArtworkFallback(id),
+      playlistItemId: this.getPlaylistItemId(item),
     };
   }
 
@@ -291,6 +332,76 @@ export class YouTubeMusicDataSource extends DataSource {
 
   private uniqueById<T extends { id: string }>(items: T[]): T[] {
     return [...new Map(items.map((item) => [item.id, item])).values()];
+  }
+
+  private findLikeEndpoint(root: unknown, status: "LIKE" | "INDIFFERENT"): RawLikeEndpoint | null {
+    const seen = new WeakSet<object>();
+    let match: RawLikeEndpoint | null = null;
+
+    const visit = (value: unknown) => {
+      if (!value || typeof value !== "object" || match || seen.has(value)) return;
+      seen.add(value);
+
+      const candidate = value as { likeEndpoint?: RawLikeEndpoint };
+      if (candidate.likeEndpoint?.status === status) {
+        match = candidate.likeEndpoint;
+        return;
+      }
+
+      for (const child of Object.values(value)) visit(child);
+    };
+
+    visit(root);
+    return match;
+  }
+
+  private async executeTrackLikeCommand(
+    musicClient: Innertube,
+    trackId: string,
+    liked: boolean,
+  ) {
+    const musicNextResponse = await musicClient.actions.execute("/next", {
+      videoId: trackId,
+      client: "YTMUSIC",
+    });
+    const status = liked ? "LIKE" : "INDIFFERENT";
+    let endpoint = this.findLikeEndpoint(musicNextResponse.data, status);
+    let endpointSource = "music";
+
+    if (!endpoint?.target) {
+      const webClient = await this.getWebClient();
+      const webNextResponse = await webClient.actions.execute("/next", {
+        videoId: trackId,
+      });
+      endpoint = this.findLikeEndpoint(webNextResponse.data, status);
+      endpointSource = "web";
+    }
+
+    if (!endpoint?.target) {
+      logInternalError("YouTubeMusicDataSource.executeTrackLikeCommand missing endpoint", {
+        trackId,
+        status,
+      });
+      throw new Error(`YouTube did not return a ${status} command for this song.`);
+    }
+
+    const params = liked
+      ? endpoint.likeParams ?? endpoint.params
+      : endpoint.removeLikeParams ?? endpoint.params;
+    const path = liked ? "/like/like" : "/like/removelike";
+
+    logInternalInfo("YouTubeMusicDataSource.executeTrackLikeCommand", {
+      trackId,
+      status,
+      hasParams: Boolean(params),
+      endpointSource,
+    });
+
+    return musicClient.actions.execute(path, {
+      client: "YTMUSIC",
+      target: endpoint.target,
+      ...(params ? { params } : {}),
+    });
   }
 
   private getMusicContinuation(client: Innertube, root: unknown): MusicContinuation | null {
@@ -425,9 +536,9 @@ export class YouTubeMusicDataSource extends DataSource {
       page = await page.getContinuation();
     }
 
-    const tracks = this.uniqueById(
-      items.map((item) => this.toTrack(item)).filter((item): item is Track => Boolean(item)),
-    );
+    const tracks = items
+      .map((item) => this.toTrack(item))
+      .filter((item): item is Track => Boolean(item));
     logInternalInfo("YouTubeMusicDataSource.collectPlaylistTracks complete", {
       playlistId,
       pageCount,
@@ -538,6 +649,23 @@ export class YouTubeMusicDataSource extends DataSource {
 
     await Promise.all(workers);
     return playlists.filter((playlist) => createdPlaylistIds.has(playlist.id));
+  }
+
+  private async getLikedSongs(client: Innertube): Promise<{
+    playlist: Playlist;
+    tracks: Track[];
+  }> {
+    const tracks = await this.collectPlaylistTracks(client, LIKED_SONGS_PLAYLIST_ID);
+
+    return {
+      playlist: {
+        id: LIKED_SONGS_PLAYLIST_ID,
+        title: "Liked Songs",
+        owner: "YouTube Music",
+        kind: "liked-songs",
+      },
+      tracks,
+    };
   }
 
   private async applyLibraryFilter(
@@ -680,11 +808,11 @@ export class YouTubeMusicDataSource extends DataSource {
   }
 
   getCachedLibrary(): Promise<LibrarySnapshot | null> {
-    return getCachedJson<LibrarySnapshot>("youtube-music:library:v3");
+    return getCachedJson<LibrarySnapshot>(LIBRARY_CACHE_KEY);
   }
 
   async getLibrary(onUpdate?: (library: LibrarySnapshot) => void): Promise<LibrarySnapshot> {
-    const cacheKey = "youtube-music:library:v3";
+    const cacheKey = LIBRARY_CACHE_KEY;
     const cached = await getCachedJson<LibrarySnapshot>(cacheKey);
 
     if (cached) {
@@ -751,12 +879,17 @@ export class YouTubeMusicDataSource extends DataSource {
     const albumItems = this.collectMusicItems(albumLibrary, new Set(["album"]));
     const recentItems = this.collectMusicItems(historyResponse, new Set(["song", "video"]));
     const parsedAlbums = this.uniqueById(albumItems.map((item) => this.toAlbum(item)).filter((item): item is Album => Boolean(item)));
-    const [albums, playlists] = await Promise.all([
+    const [albums, playlists, likedSongsResult] = await Promise.all([
       this.enrichMissingAlbumArtwork(client, parsedAlbums),
       this.getCreatedPlaylists(client, playlistLibrary),
+      this.getLikedSongs(client),
     ]);
     const recentlyPlayed = this.uniqueById(recentItems.map((item) => this.toTrack(item)).filter((item): item is Track => Boolean(item)));
     const historyMessages = this.getResponseMessages(historyResponse);
+    await setCachedJson(
+      `youtube-music:playlist-tracks:v4:${LIKED_SONGS_PLAYLIST_ID}`,
+      likedSongsResult.tracks,
+    );
 
     if (libraryMessages.length > 0 && albums.length === 0) {
       throw new Error(`YouTube Music returned an account message: ${libraryMessages.join(" ")}`);
@@ -765,6 +898,7 @@ export class YouTubeMusicDataSource extends DataSource {
     logInternalInfo("YouTubeMusicDataSource.getLibrary success", {
       albumCount: albums.length,
       playlistCount: playlists.length,
+      likedSongCount: likedSongsResult.tracks.length,
       recentTrackCount: recentlyPlayed.length,
       albumRenderers: this.getRendererCounts(albumLibrary),
       playlistRenderers: this.getRendererCounts(playlistLibrary),
@@ -780,6 +914,8 @@ export class YouTubeMusicDataSource extends DataSource {
       },
       albums,
       playlists,
+      likedSongsPlaylist: likedSongsResult.playlist,
+      likedSongs: likedSongsResult.tracks,
       recentlyPlayed,
     };
   }
@@ -851,7 +987,7 @@ export class YouTubeMusicDataSource extends DataSource {
   }
 
   async getPlaylistTracks(playlist: Playlist, onUpdate?: (tracks: Track[]) => void): Promise<Track[]> {
-    const cacheKey = `youtube-music:playlist-tracks:v3:${playlist.id}`;
+    const cacheKey = `youtube-music:playlist-tracks:v4:${playlist.id}`;
     const cached = await getCachedJson<Track[]>(cacheKey);
 
     if (cached?.length) {
@@ -927,7 +1063,7 @@ export class YouTubeMusicDataSource extends DataSource {
 
     try {
       const client = await this.getMusicClient();
-      const cacheKey = `youtube-music:playlist-tracks:v3:${playlist.id}`;
+      const cacheKey = `youtube-music:playlist-tracks:v4:${playlist.id}`;
       const cachedTracks = await getCachedJson<Track[]>(cacheKey);
       const existingTracks = cachedTracks
         ?? await this.collectPlaylistTracks(client, playlist.id);
@@ -983,143 +1119,47 @@ export class YouTubeMusicDataSource extends DataSource {
     if (!this.musicCookie) {
       throw new Error("Sign in to YouTube Music before removing songs from playlists.");
     }
+    if (!track.playlistItemId) {
+      throw new Error("Reload the playlist before removing this song.");
+    }
 
     logInternalInfo("YouTubeMusicDataSource.removeTrackFromPlaylist start", {
       trackId: track.id,
+      playlistItemId: track.playlistItemId,
       playlistId: playlist.id,
     });
 
     try {
       const client = await this.getMusicClient();
-      const webClient = await this.getWebClient();
-      const cacheKey = `youtube-music:playlist-tracks:v3:${playlist.id}`;
-      const basePlaylistId = playlist.id.startsWith("VL") ? playlist.id.slice(2) : playlist.id;
+      const cacheKey = `youtube-music:playlist-tracks:v4:${playlist.id}`;
+      const editablePlaylistId = playlist.id.startsWith("VL")
+        ? playlist.id.slice(2)
+        : playlist.id;
 
-      const candidateIds = Array.from(new Set([
-        playlist.id,
-        basePlaylistId,
-        playlist.id.replace(/^VL/, ""),
-        `PL${basePlaylistId}`,
-        `VL${basePlaylistId}`,
-      ]))
-        .filter((value) => Boolean(value));
-
-      let lastError: unknown = null;
-      let usedMethod: string | null = null;
-
-      const tryRemoveWithId = async (c: Innertube, id: string) => {
-        try {
-          if ((c.playlist as any)?.removeVideos) {
-            await (c.playlist as any).removeVideos(id, [track.id]);
-            return true;
-          }
-          if ((c.playlist as any)?.removeVideo) {
-            await (c.playlist as any).removeVideo(id, track.id);
-            return true;
-          }
-          return false;
-        } catch (error) {
-          lastError = lastError ?? error;
-          return false;
-        }
-      };
-
-      for (const id of candidateIds) {
-        logInternalInfo("YouTubeMusicDataSource.removeTrackFromPlaylist trying id", { id, trackId: track.id, playlistId: playlist.id });
-        if (await tryRemoveWithId(client, id)) {
-          usedMethod = `music.removeVideos:${id}`;
-          break;
-        }
-        if (await tryRemoveWithId(webClient, id)) {
-          usedMethod = `web.removeVideos:${id}`;
-          break;
-        }
-      }
-
-      if (!usedMethod) {
-        logInternalWarn("YouTubeMusicDataSource.removeTrackFromPlaylist removeVideos failed", {
-          candidateIds,
-          lastError: lastError instanceof Error ? lastError.message : String(lastError),
-        });
-
-        const editPlaylistPayload = {
-          actions: [
-            {
-              action: "ACTION_REMOVE_VIDEO",
-              removedVideoId: track.id,
-            },
-          ],
-          playlistId: basePlaylistId,
-        } as any;
-
-        logInternalInfo("YouTubeMusicDataSource.removeTrackFromPlaylist final-fallback edit_playlist start", {
-          playlistId: basePlaylistId,
-          trackId: track.id,
-        });
-
-        try {
-          await (client.actions as any).execute("/browse/edit_playlist", {
-            ...editPlaylistPayload,
-            parse: true,
-          });
-          usedMethod = `music.edit_playlist:${basePlaylistId}`;
-        } catch (error) {
-          logInternalWarn("YouTubeMusicDataSource.removeTrackFromPlaylist final-fallback music client failed", {
-            playlistId: basePlaylistId,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          try {
-            await (webClient.actions as any).execute("/browse/edit_playlist", {
-              ...editPlaylistPayload,
-              parse: true,
-            });
-            usedMethod = `web.edit_playlist:${basePlaylistId}`;
-          } catch (webError) {
-            lastError = lastError ?? webError;
-            logInternalWarn("YouTubeMusicDataSource.removeTrackFromPlaylist final-fallback web client failed", {
-              playlistId: basePlaylistId,
-              error: webError instanceof Error ? webError.message : String(webError),
-            });
-          }
-        }
-      }
-
-      if (!usedMethod) {
-        logInternalError("YouTubeMusicDataSource.removeTrackFromPlaylist no removal method succeeded", {
-          trackId: track.id,
-          playlistId: playlist.id,
-          lastError: lastError instanceof Error ? lastError.message : String(lastError),
-        });
-        if (lastError instanceof Error) throw lastError;
-        throw new Error("Playlist remove method unavailable");
-      }
-
-      logInternalInfo("YouTubeMusicDataSource.removeTrackFromPlaylist usedMethod", {
-        usedMethod,
-        trackId: track.id,
-        playlistId: playlist.id,
+      const response = await client.actions.execute("browse/edit_playlist", {
+        playlistId: editablePlaylistId,
+        actions: [
+          {
+            action: "ACTION_REMOVE_VIDEO",
+            setVideoId: track.playlistItemId,
+          },
+        ],
       });
-
-      let updatedTracks: Track[] | null = null;
-      for (const delayMs of [0, 500, 1500]) {
-        if (delayMs > 0) {
-          await new Promise<void>((resolve) => globalThis.setTimeout(resolve, delayMs));
-        }
-
-        const confirmedTracks = await this.collectPlaylistTracks(client, playlist.id);
-        if (!confirmedTracks.some((item) => item.id === track.id)) {
-          updatedTracks = confirmedTracks;
-          break;
-        }
+      if (!response.success) {
+        throw new Error(`Playlist edit returned HTTP ${response.status_code}.`);
       }
 
-      if (!updatedTracks) {
-        throw new Error("YouTube Music did not confirm the playlist update.");
+      const cachedTracks = await getCachedJson<Track[]>(cacheKey);
+      if (cachedTracks) {
+        await setCachedJson(
+          cacheKey,
+          cachedTracks.filter((item) => item.playlistItemId !== track.playlistItemId),
+        );
       }
 
-      await setCachedJson(cacheKey, updatedTracks);
       logInternalInfo("YouTubeMusicDataSource.removeTrackFromPlaylist success", {
         trackId: track.id,
+        playlistItemId: track.playlistItemId,
         playlistId: playlist.id,
       });
     } catch (error) {
@@ -1127,8 +1167,55 @@ export class YouTubeMusicDataSource extends DataSource {
         trackId: track.id,
         playlistId: playlist.id,
       });
-      if (error instanceof Error) throw error;
-      throw new Error("YouTube Music could not remove this song from the playlist: " + String(error));
+      throw new Error("YouTube Music could not remove this song from the playlist.");
+    }
+  }
+
+  async setTrackLiked(track: Track, liked: boolean): Promise<void> {
+    if (!this.musicCookie) {
+      throw new Error("Sign in to like songs.");
+    }
+
+    logInternalInfo("YouTubeMusicDataSource.setTrackLiked start", {
+      trackId: track.id,
+      liked,
+    });
+
+    try {
+      const client = await this.getMusicClient();
+      const response = await this.executeTrackLikeCommand(client, track.id, liked);
+
+      if (!response.success) {
+        throw new Error(`YouTube returned HTTP ${response.status_code}.`);
+      }
+
+      const cachedLibrary = await getCachedJson<LibrarySnapshot>(LIBRARY_CACHE_KEY);
+      if (cachedLibrary) {
+        const likedSongs = liked
+          ? this.uniqueById([track, ...cachedLibrary.likedSongs])
+          : cachedLibrary.likedSongs.filter((item) => item.id !== track.id);
+        await setCachedJson(LIBRARY_CACHE_KEY, {
+          ...cachedLibrary,
+          likedSongs,
+        });
+        await setCachedJson(
+          `youtube-music:playlist-tracks:v4:${LIKED_SONGS_PLAYLIST_ID}`,
+          likedSongs,
+        );
+      }
+
+      logInternalInfo("YouTubeMusicDataSource.setTrackLiked success", {
+        trackId: track.id,
+        liked,
+      });
+    } catch (error) {
+      logInternalError("YouTubeMusicDataSource.setTrackLiked failed", error, {
+        trackId: track.id,
+        liked,
+      });
+      throw new Error(liked
+        ? "YouTube Music could not like this song."
+        : "YouTube Music could not remove this like.");
     }
   }
 

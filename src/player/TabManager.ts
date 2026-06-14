@@ -31,6 +31,7 @@ export class TabManager {
   private playbackOwnerId: MusicTabId | null = null;
   private readonly playerUnsubscribes = new Map<MusicTabId, () => void>();
   private readonly listeners = new Set<Listener>();
+  private activeSessionSnapshot: PlayerSession | null | undefined;
 
   get active(): MusicTab | null {
     return this.activeId ? this.tabs.get(this.activeId) ?? null : null;
@@ -86,7 +87,10 @@ export class TabManager {
   }
 
   getActiveSession(): PlayerSession | null {
-    return this.getEffectivePlayer()?.exportSession() ?? null;
+    if (this.activeSessionSnapshot === undefined) {
+      this.activeSessionSnapshot = this.getEffectivePlayer()?.exportSession() ?? null;
+    }
+    return this.activeSessionSnapshot;
   }
 
   getActivePlayerId(): MusicTabId | null {
@@ -195,6 +199,7 @@ export class TabManager {
   }
 
   private emit(): void {
+    this.activeSessionSnapshot = undefined;
     for (const listener of this.listeners) {
       listener();
     }

@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
 import styles from "./Layout.module.css";
 import { SearchBar } from "./SearchBar";
 import { Sidebar } from "./Sidebar";
@@ -17,6 +17,8 @@ interface LayoutProps {
   onOpenSearch: () => void;
   fullBleedContent?: boolean;
   rightPanel?: ReactNode;
+  rightPanelWidth?: number;
+  onRightPanelWidthChange?: (width: number) => void;
 }
 
 export function Layout({ 
@@ -30,8 +32,41 @@ export function Layout({
   onOpenSearch,
   fullBleedContent = false,
   rightPanel,
+  rightPanelWidth = 340,
+  onRightPanelWidthChange,
 }: LayoutProps) {
   const paperPcMode = usePaperPcMode();
+  const rightPanelRef = useRef<HTMLDivElement>(null);
+  const dragStartX = useRef<number | null>(null);
+  const [isDraggingRightPanel, setIsDraggingRightPanel] = useState(false);
+
+  useEffect(() => {
+    const handleMouseMove = (event: MouseEvent) => {
+      if (
+        dragStartX.current === null
+        || !rightPanelRef.current
+        || !onRightPanelWidthChange
+      ) return;
+
+      if (Math.abs(event.clientX - dragStartX.current) < 4) return;
+      const rect = rightPanelRef.current.getBoundingClientRect();
+      const availableWidth = Math.max(280, window.innerWidth - sidebarWidth - 240);
+      const nextWidth = rect.right - event.clientX;
+      onRightPanelWidthChange(Math.max(280, Math.min(520, availableWidth, nextWidth)));
+    };
+
+    const handleMouseUp = () => {
+      dragStartX.current = null;
+      setIsDraggingRightPanel(false);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [onRightPanelWidthChange, sidebarWidth]);
 
   return (
     <div className={styles.layout}>
@@ -52,7 +87,23 @@ export function Layout({
               {children}
             </div>
             {rightPanel && (
-              <div className={styles.rightPanel}>
+              <div
+                ref={rightPanelRef}
+                className={styles.rightPanel}
+                style={{ width: `${rightPanelWidth}px` }}
+              >
+                <div
+                  className={`${styles.rightPanelDragHandle} ${
+                    isDraggingRightPanel ? styles.rightPanelDragHandleActive : ""
+                  }`}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    dragStartX.current = event.clientX;
+                    setIsDraggingRightPanel(true);
+                  }}
+                  title="Drag to resize queue"
+                />
                 {rightPanel}
               </div>
             )}

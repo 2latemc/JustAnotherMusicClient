@@ -10,6 +10,9 @@
     "core:window:allow-maximize",
     "core:window:allow-unmaximize",
     "core:window:allow-close",
+    "autostart:allow-enable",
+    "autostart:allow-disable",
+    "autostart:allow-is-enabled",
     "opener:default"
   ],
   "allowlist": {

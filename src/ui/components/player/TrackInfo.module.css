@@ -1,9 +1,93 @@
 .trackInfo {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
+  width: 100%;
   min-width: 0;
-  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.likeButton {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    color 120ms ease,
+    background-color 120ms ease,
+    border-color 120ms ease,
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+.likeButton:hover:not(:disabled) {
+  color: var(--color-text-primary);
+  background: rgb(255 255 255 / 8%);
+}
+
+.likeButton:disabled {
+  cursor: wait;
+  opacity: 0.45;
+}
+
+.likeButton.liked {
+  color: var(--color-text-primary);
+  border-color: rgb(255 255 255 / 10%);
+  background: rgb(255 255 255 / 7%);
+}
+
+.likedIconStage {
+  position: relative;
+  width: 18px;
+  height: 18px;
+}
+
+.likedHeartIcon,
+.removeLikeIcon {
+  position: absolute;
+  inset: 0;
+  transition: opacity 140ms ease, transform 160ms ease;
+}
+
+.likedHeartIcon {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.removeLikeIcon {
+  opacity: 0;
+  transform: scale(0.72);
+}
+
+.likeButton.liked:hover .likedHeartIcon,
+.likeButton.liked:focus-visible .likedHeartIcon {
+  opacity: 0;
+  transform: scale(0.72);
+}
+
+.likeButton.liked:hover .removeLikeIcon,
+.likeButton.liked:focus-visible .removeLikeIcon {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.likeLoadingIcon {
+  animation: likeLoadingSpin 800ms linear infinite;
+}
+
+@keyframes likeLoadingSpin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .albumArt {
@@ -22,18 +106,42 @@
 .trackDetails {
   display: flex;
   flex-direction: column;
+  width: max-content;
+  max-width: 100%;
   min-width: 0;
-  flex: 1;
+  flex: 0 1 auto;
+  overflow: hidden;
 }
 
 .trackTitle {
+  width: 100%;
   color: #ffffff;
   font-size: 14px;
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
   margin: 0;
+}
+
+.trackTitle span {
+  display: inline-block;
+  min-width: max-content;
+}
+
+.scrollingTitle span {
+  animation: scrollTrackTitle var(--title-scroll-duration) ease-in-out infinite alternate;
+}
+
+@keyframes scrollTrackTitle {
+  0%,
+  15% {
+    transform: translateX(0);
+  }
+
+  85%,
+  100% {
+    transform: translateX(calc(-1 * var(--title-scroll-distance)));
+  }
 }
 
 .trackArtist {
@@ -50,5 +158,11 @@
 @media (max-width: 800px) {
   .albumArt {
     display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scrollingTitle span {
+    animation: none;
   }
 }

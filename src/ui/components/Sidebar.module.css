@@ -241,6 +241,11 @@
   color: var(--color-text-secondary);
 }
 
+.likedSongsPreview {
+  background: rgb(38 38 40);
+  color: #fff;
+}
+
 .albumText {
   min-width: 0;
   display: flex;

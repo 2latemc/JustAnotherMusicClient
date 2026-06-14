@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import {
   IconDisc,
+  IconHeart,
   IconPlaylist,
 } from "@tabler/icons-react";
 import type { Album, Playlist } from "../../datasource/types";
@@ -13,25 +14,35 @@ import styles from "./Sidebar.module.css";
  
 const PLAYLIST_ORDER_KEY = "ytc-sidebar-playlist-order";
 const ALBUM_ORDER_KEY = "ytc-sidebar-album-order";
+const PLAYLIST_LIKED_ORDER_MIGRATION_KEY = "ytc-sidebar-playlist-liked-order-v1";
+const ALBUM_LIKED_ORDER_MIGRATION_KEY = "ytc-sidebar-album-liked-order-v1";
 
-function loadOrderFromStorage(key: string): string[] {
+function loadOrderFromStorage(key: string, migrationKey: string): string[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed)
+    const order = Array.isArray(parsed)
       ? parsed.filter((item): item is string => typeof item === "string")
       : [];
+    if (order.includes("LM") && localStorage.getItem(migrationKey) !== "true") {
+      const migratedOrder = ["LM", ...order.filter((id) => id !== "LM")];
+      localStorage.setItem(key, JSON.stringify(migratedOrder));
+      localStorage.setItem(migrationKey, "true");
+      return migratedOrder;
+    }
+    return order;
   } catch {
     return [];
   }
 }
 
-function saveOrderToStorage(key: string, order: string[]) {
+function saveOrderToStorage(key: string, order: string[], migrationKey?: string) {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(key, JSON.stringify(order));
+    if (migrationKey) localStorage.setItem(migrationKey, "true");
   } catch {
     // ignore storage failures
   }
@@ -66,6 +77,14 @@ function SidebarAlbumArtwork({ album }: { album: Album }) {
     setFailed(false);
   }, [album.artworkUrl]);
 
+  if (album.id === "LM") {
+    return (
+      <div className={`${styles.albumPreview} ${styles.albumPreviewFallback} ${styles.likedSongsPreview}`}>
+        <IconHeart size={24} stroke={1.8} aria-hidden="true" />
+      </div>
+    );
+  }
+
   if (!album.artworkUrl || failed) {
     return (
       <div className={`${styles.albumPreview} ${styles.albumPreviewFallback}`}>
@@ -92,6 +111,14 @@ function SidebarPlaylistArtwork({ playlist }: { playlist: Playlist }) {
   useEffect(() => {
     setFailed(false);
   }, [playlist.artworkUrl]);
+
+  if (playlist.kind === "liked-songs" || playlist.id === "LM") {
+    return (
+      <div className={`${styles.albumPreview} ${styles.albumPreviewFallback} ${styles.likedSongsPreview}`}>
+        <IconHeart size={24} stroke={1.8} aria-hidden="true" />
+      </div>
+    );
+  }
 
   if (!playlist.artworkUrl || failed) {
     return (
@@ -122,8 +149,12 @@ export function Sidebar({
   const [libraryView, setLibraryView] = useState<LibraryView>("playlists");
   const [recentPlaylistsRevision, setRecentPlaylistsRevision] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
-  const [playlistOrder, setPlaylistOrder] = useState<string[]>(() => loadOrderFromStorage(PLAYLIST_ORDER_KEY));
-  const [albumOrder, setAlbumOrder] = useState<string[]>(() => loadOrderFromStorage(ALBUM_ORDER_KEY));
+  const [playlistOrder, setPlaylistOrder] = useState<string[]>(() =>
+    loadOrderFromStorage(PLAYLIST_ORDER_KEY, PLAYLIST_LIKED_ORDER_MIGRATION_KEY)
+  );
+  const [albumOrder, setAlbumOrder] = useState<string[]>(() =>
+    loadOrderFromStorage(ALBUM_ORDER_KEY, ALBUM_LIKED_ORDER_MIGRATION_KEY)
+  );
   const [draggedItem, setDraggedItem] = useState<{ id: string; type: LibraryView } | null>(null);
   const [dropTarget, setDropTarget] = useState<{ id: string; type: LibraryView; insertAfter: boolean } | null>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
@@ -153,8 +184,39 @@ export function Sidebar({
   const isCollapsed = width <= COLLAPSED_WIDTH;
   const shouldHideText = width <= TEXT_HIDE_THRESHOLD;
 
+  useEffect(() => {
+    if (localStorage.getItem(PLAYLIST_LIKED_ORDER_MIGRATION_KEY) !== "true") {
+      setPlaylistOrder((current) => {
+        if (!current.includes("LM")) return current;
+        const migrated = ["LM", ...current.filter((id) => id !== "LM")];
+        saveOrderToStorage(
+          PLAYLIST_ORDER_KEY,
+          migrated,
+          PLAYLIST_LIKED_ORDER_MIGRATION_KEY,
+        );
+        return migrated;
+      });
+    }
+
+    if (localStorage.getItem(ALBUM_LIKED_ORDER_MIGRATION_KEY) !== "true") {
+      setAlbumOrder((current) => {
+        if (!current.includes("LM")) return current;
+        const migrated = ["LM", ...current.filter((id) => id !== "LM")];
+        saveOrderToStorage(
+          ALBUM_ORDER_KEY,
+          migrated,
+          ALBUM_LIKED_ORDER_MIGRATION_KEY,
+        );
+        return migrated;
+      });
+    }
+  }, []);
+
   const playlists = useMemo(() => {
-    const libraryPlaylists = libraryState.library?.playlists ?? [];
+    const likedSongsPlaylist = libraryState.library?.likedSongsPlaylist;
+    const libraryPlaylists = likedSongsPlaylist
+      ? [likedSongsPlaylist, ...(libraryState.library?.playlists ?? [])]
+      : libraryState.library?.playlists ?? [];
     if (!libraryPlaylists.length) return [];
 
     const playlistById = new Map(libraryPlaylists.map((playlist) => [playlist.id, playlist]));
@@ -165,12 +227,16 @@ export function Sidebar({
       const missingIds = libraryPlaylists
         .map((playlist) => playlist.id)
         .filter((id) => !savedIds.includes(id));
-      return [...savedIds, ...missingIds]
+      const orderedIds = likedSongsPlaylist && !savedIds.includes(likedSongsPlaylist.id)
+        ? [likedSongsPlaylist.id, ...savedIds, ...missingIds.filter((id) => id !== likedSongsPlaylist.id)]
+        : [...savedIds, ...missingIds];
+      return orderedIds
         .map((id) => playlistById.get(id))
         .filter((playlist): playlist is Playlist => Boolean(playlist));
     }
 
-    return libraryPlaylists
+    const defaultPlaylists = libraryPlaylists
+      .filter((playlist) => playlist.id !== likedSongsPlaylist?.id)
       .map((playlist, libraryIndex) => ({
         playlist,
         libraryIndex,
@@ -180,10 +246,29 @@ export function Sidebar({
         right.playedAt - left.playedAt || left.libraryIndex - right.libraryIndex
       )
       .map(({ playlist }) => playlist);
-  }, [libraryState.library?.playlists, playlistOrder, recentPlaylistsRevision]);
+    return likedSongsPlaylist
+      ? [likedSongsPlaylist, ...defaultPlaylists]
+      : defaultPlaylists;
+  }, [
+    libraryState.library?.likedSongsPlaylist,
+    libraryState.library?.playlists,
+    playlistOrder,
+    recentPlaylistsRevision,
+  ]);
 
   const albums = useMemo(() => {
-    const libraryAlbums = libraryState.library?.albums ?? [];
+    const likedSongsPlaylist = libraryState.library?.likedSongsPlaylist;
+    const likedSongsAlbum: Album | null = likedSongsPlaylist
+      ? {
+          id: likedSongsPlaylist.id,
+          title: "Liked Songs",
+          artist: likedSongsPlaylist.owner,
+          artworkUrl: likedSongsPlaylist.artworkUrl,
+        }
+      : null;
+    const libraryAlbums = likedSongsAlbum
+      ? [likedSongsAlbum, ...(libraryState.library?.albums ?? [])]
+      : libraryState.library?.albums ?? [];
     if (!libraryAlbums.length) return [];
 
     const albumById = new Map(libraryAlbums.map((album) => [album.id, album]));
@@ -194,13 +279,20 @@ export function Sidebar({
       const missingIds = libraryAlbums
         .map((album) => album.id)
         .filter((id) => !savedIds.includes(id));
-      return [...savedIds, ...missingIds]
+      const orderedIds = likedSongsAlbum && !savedIds.includes(likedSongsAlbum.id)
+        ? [likedSongsAlbum.id, ...savedIds, ...missingIds.filter((id) => id !== likedSongsAlbum.id)]
+        : [...savedIds, ...missingIds];
+      return orderedIds
         .map((id) => albumById.get(id))
         .filter((album): album is Album => Boolean(album));
     }
 
     return libraryAlbums;
-  }, [libraryState.library?.albums, albumOrder]);
+  }, [
+    libraryState.library?.likedSongsPlaylist,
+    libraryState.library?.albums,
+    albumOrder,
+  ]);
 
   useEffect(
     () => subscribeToRecentPlaylists(
@@ -211,39 +303,63 @@ export function Sidebar({
 
   useEffect(() => {
     if (!libraryState.library) return;
-    const playlistIds = libraryState.library.playlists.map((playlist) => playlist.id);
+    const playlistIds = [
+      libraryState.library.likedSongsPlaylist.id,
+      ...libraryState.library.playlists.map((playlist) => playlist.id),
+    ];
     if (playlistOrder.length > 0) {
       const normalized = [
+        ...(playlistOrder.includes("LM") ? [] : ["LM"]),
         ...playlistOrder.filter((id) => playlistIds.includes(id)),
         ...playlistIds.filter((id) => !playlistOrder.includes(id)),
-      ];
+      ].filter((id, index, ids) => ids.indexOf(id) === index);
       if (
         normalized.length !== playlistOrder.length ||
         normalized.some((id, index) => id !== playlistOrder[index])
       ) {
         setPlaylistOrder(normalized);
-        saveOrderToStorage(PLAYLIST_ORDER_KEY, normalized);
+        saveOrderToStorage(
+          PLAYLIST_ORDER_KEY,
+          normalized,
+          PLAYLIST_LIKED_ORDER_MIGRATION_KEY,
+        );
       }
     }
-  }, [libraryState.library?.playlists, playlistOrder]);
+  }, [
+    libraryState.library?.likedSongsPlaylist,
+    libraryState.library?.playlists,
+    playlistOrder,
+  ]);
 
   useEffect(() => {
     if (!libraryState.library) return;
-    const albumIds = libraryState.library.albums.map((album) => album.id);
+    const albumIds = [
+      libraryState.library.likedSongsPlaylist.id,
+      ...libraryState.library.albums.map((album) => album.id),
+    ];
     if (albumOrder.length > 0) {
       const normalized = [
+        ...(albumOrder.includes("LM") ? [] : ["LM"]),
         ...albumOrder.filter((id) => albumIds.includes(id)),
         ...albumIds.filter((id) => !albumOrder.includes(id)),
-      ];
+      ].filter((id, index, ids) => ids.indexOf(id) === index);
       if (
         normalized.length !== albumOrder.length ||
         normalized.some((id, index) => id !== albumOrder[index])
       ) {
         setAlbumOrder(normalized);
-        saveOrderToStorage(ALBUM_ORDER_KEY, normalized);
+        saveOrderToStorage(
+          ALBUM_ORDER_KEY,
+          normalized,
+          ALBUM_LIKED_ORDER_MIGRATION_KEY,
+        );
       }
     }
-  }, [libraryState.library?.albums, albumOrder]);
+  }, [
+    libraryState.library?.likedSongsPlaylist,
+    libraryState.library?.albums,
+    albumOrder,
+  ]);
 
   const playlistsRef = useRef<string[]>([]);
   const albumsRef = useRef<string[]>([]);
@@ -367,10 +483,18 @@ export function Sidebar({
 
         if (drag.itemType === "playlists") {
           setPlaylistOrder(nextOrder);
-          saveOrderToStorage(PLAYLIST_ORDER_KEY, nextOrder);
+          saveOrderToStorage(
+            PLAYLIST_ORDER_KEY,
+            nextOrder,
+            PLAYLIST_LIKED_ORDER_MIGRATION_KEY,
+          );
         } else {
           setAlbumOrder(nextOrder);
-          saveOrderToStorage(ALBUM_ORDER_KEY, nextOrder);
+          saveOrderToStorage(
+            ALBUM_ORDER_KEY,
+            nextOrder,
+            ALBUM_LIKED_ORDER_MIGRATION_KEY,
+          );
         }
 
         suppressClickRef.current = true;
@@ -503,7 +627,13 @@ export function Sidebar({
                 data-sidebar-item-type="albums"
                 className={`${styles.albumItem} ${shouldHideText ? styles.centered : ""} ${draggedItem?.id === album.id && draggedItem.type === "albums" ? styles.dragging : ""} ${dropTarget?.id === album.id && dropTarget?.type === "albums" && !dropTarget.insertAfter ? styles.dropBefore : ""} ${dropTarget?.id === album.id && dropTarget?.type === "albums" && dropTarget.insertAfter ? styles.dropAfter : ""}`}
                 onPointerDown={(event) => handleSidebarItemPointerDown(event, album.id, "albums")}
-                onClick={() => handleSidebarItemClick(() => onNavigateAlbum(album))}
+                onClick={() => handleSidebarItemClick(() => {
+                  if (album.id === "LM" && libraryState.library?.likedSongsPlaylist) {
+                    onNavigatePlaylist(libraryState.library.likedSongsPlaylist);
+                  } else {
+                    onNavigateAlbum(album);
+                  }
+                })}
                 title={shouldHideText ? `${album.title} by ${album.artist}` : undefined}
               >
                 <SidebarAlbumArtwork album={album} />

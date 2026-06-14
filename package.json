@@ -12,6 +12,7 @@
   "dependencies": {
     "@tabler/icons-react": "^3.44.0",
     "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-autostart": "^2.5.1",
     "@tauri-apps/plugin-opener": "^2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

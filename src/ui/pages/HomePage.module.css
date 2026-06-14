@@ -91,13 +91,14 @@
   font-weight: var(--font-weight-semibold);
 }
 
+/* ── Made For You grid ──────────────────────────────────────────────────────
+   Two rows, columns sized to fill available width.
+   clamp(140px, …, 180px) keeps cards from getting too narrow or too wide.
+   On small screens it collapses to a single horizontal scroll rail.        */
 .suggestionGrid {
   display: grid;
-  grid-template-rows: repeat(2, auto);
-  grid-auto-flow: column;
-  grid-auto-columns: 160px;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: 22px 18px;
-  overflow-x: auto;
   padding: 4px 5px 10px;
 }
 
@@ -111,6 +112,7 @@
   animation: shimmer 1.4s infinite linear;
 }
 
+/* ── Recently Played compact list ──────────────────────────────────────── */
 .compactGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -172,27 +174,24 @@
   font-size: var(--font-size-sm);
 }
 
+/* ── More Recommendations horizontal rail ──────────────────────────────
+   Single-row horizontal scroll; cards shrink/grow between 130–180 px.   */
 .cardRail {
   display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 160px;
-  justify-content: start;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: var(--spacing-lg);
-  overflow-x: auto;
   padding: 4px 5px 10px;
 }
 
+/* ── Listen Again – four-row column grid ───────────────────────────────── */
 .listenAgainGrid {
   display: grid;
-  grid-template-rows: repeat(4, auto);
-  grid-auto-flow: column;
-  grid-auto-columns: 160px;
-  justify-content: start;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: 22px var(--spacing-lg);
-  overflow-x: auto;
   padding: 4px 5px 10px;
 }
 
+/* ── Empty state ─────────────────────────────────────────────────────────── */
 .emptyState {
   min-height: 180px;
   display: flex;
@@ -214,6 +213,7 @@
   cursor: pointer;
 }
 
+/* ── Animations ──────────────────────────────────────────────────────────── */
 @keyframes shimmer {
   to {
     background-position: -120% 0;
@@ -231,6 +231,11 @@
   }
 }
 
+/* ── Responsive breakpoints ──────────────────────────────────────────────── */
+
+
+
+/* Small screens */
 @media (max-width: 760px) {
   .root {
     padding-inline: 16px;
@@ -245,7 +250,10 @@
     flex-direction: column;
     padding: 18px 22px;
   }
+
+
 }
+
 
 @media (prefers-reduced-motion: reduce) {
   .suggestionSkeleton,

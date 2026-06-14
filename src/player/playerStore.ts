@@ -40,7 +40,9 @@ type PlayerControllerMethod =
   | "cyclePlaybackOrderMode"
   | "getLyrics"
   | "getPlayerSession"
-  | "removeFromQueueAt";
+  | "removeFromQueueAt"
+  | "playQueueTrackAt"
+  | "moveQueueTrack";
 
 export type PlayerControllerActions = Pick<PlayerController, PlayerControllerMethod>;
 
@@ -78,6 +80,12 @@ class ActivePlayerController implements PlayerControllerActions {
     tabManager.getActivePlayer().getLyrics(track);
   getPlayerSession = () => tabManager.getActivePlayer().exportSession();
   removeFromQueueAt = (index: number) => tabManager.getActivePlayer().removeFromQueueAt(index);
+  playQueueTrackAt = (index: number) => tabManager.getActivePlayer().playQueueTrackAt(index);
+  moveQueueTrack = (
+    sourceIndex: number,
+    targetIndex: number,
+    insertAfter: boolean,
+  ) => tabManager.getActivePlayer().moveQueueTrack(sourceIndex, targetIndex, insertAfter);
 }
 
 export const playerController: PlayerControllerActions = new ActivePlayerController();

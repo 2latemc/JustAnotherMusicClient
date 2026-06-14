@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { IconArrowsShuffle, IconPlayerPlay, IconPlaylist, IconRepeatOff, IconRepeatOnce } from "@tabler/icons-react";
+import { IconArrowsShuffle, IconPlayerPlay, IconPlaylist, IconRepeat, IconRepeatOff } from "@tabler/icons-react";
 import { tauriFetch } from "../../../datasource/youtube/tauriFetch";
 import { TrackInfo } from "./TrackInfo";
 import { PlaybackControls } from "./PlaybackControls";
@@ -187,14 +187,14 @@ export function PlayerBar({ onToggleLyrics, onToggleQueue, isQueueOpen, onConnec
                   }
                   title={
                     playbackOrderMode === "repeat-one"
-                      ? "Repeat one"
+                      ? "Loop current song"
                       : playbackOrderMode === "shuffle"
                         ? "Shuffle"
                         : "In order"
                   }
                 >
                   {playbackOrderMode === "repeat-one" ? (
-                    <IconRepeatOnce size={18} />
+                    <IconRepeat size={18} />
                   ) : playbackOrderMode === "shuffle" ? (
                     <IconArrowsShuffle size={18} />
                   ) : (

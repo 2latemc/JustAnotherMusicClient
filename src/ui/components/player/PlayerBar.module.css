@@ -117,9 +117,11 @@
 .leftSection {
   display: flex;
   align-items: center;
-  flex-shrink: 0;
   position: absolute;
   left: 16px;
+  right: calc(50% + 82px);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .centerSection {
@@ -207,6 +209,11 @@
     padding: 12px;
     gap: 12px;
   }
+
+  .leftSection {
+    left: 12px;
+    right: calc(50% + 76px);
+  }
 }
 
 @media (max-width: 600px) {
@@ -233,6 +240,11 @@
     height: 76px;
     padding: 8px;
     gap: 8px;
+  }
+
+  .leftSection {
+    left: 8px;
+    right: calc(50% + 72px);
   }
 }
 

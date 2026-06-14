@@ -38,6 +38,18 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read release notification marker
+        id: release_metadata
+        shell: bash
+        run: |
+          if git tag -l --format='%(contents)' "${{ github.ref_name }}" | grep -Fqi '[notify-update]'; then
+            echo "notify_marker=[notify-update]" >> "$GITHUB_OUTPUT"
+          else
+            echo "notify_marker=" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -70,6 +82,8 @@ jobs:
           releaseName: "Just Another Music Client ${{ github.ref_name }}"
           releaseBody: |
             Desktop installers for Just Another Music Client.
+
+            ${{ steps.release_metadata.outputs.notify_marker }}
 
             Windows: download the `.msi` or NSIS setup `.exe`.
             macOS: download the Apple Silicon `.dmg` for M-series Macs or the

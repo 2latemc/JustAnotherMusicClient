@@ -1622,6 +1622,7 @@ async fn proxy_http_request(input: ProxyHttpRequestInput) -> Result<ProxyHttpRes
 pub fn run() {
     let builder = tauri::Builder::default()
         .manage(CacheLock(Mutex::new(())))
+        .plugin(tauri_plugin_autostart::Builder::new().build())
         .plugin(tauri_plugin_opener::init());
 
     #[cfg(target_os = "windows")]

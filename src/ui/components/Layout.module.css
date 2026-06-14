@@ -115,13 +115,29 @@
 }
 
 .rightPanel {
-  width: min(380px, 30vw);
-  max-width: 380px;
-  min-width: 320px;
+  min-width: 280px;
+  max-width: 520px;
   display: flex;
   flex-direction: column;
-  margin-left: 24px;
   min-height: 0;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.rightPanelDragHandle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+  z-index: 10;
+  transition: background var(--transition-fast);
+}
+
+.rightPanelDragHandle:hover,
+.rightPanelDragHandleActive {
+  background: var(--color-accent);
 }
 
 .pageContent::-webkit-scrollbar {

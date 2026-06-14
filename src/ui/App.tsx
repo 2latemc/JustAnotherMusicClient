@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Album, Playlist, Track } from "../datasource/types";
 import { useDisableContextMenu } from "./hooks/useDisableContextMenu";
 import { HomePage } from "./pages/HomePage";
@@ -28,6 +28,12 @@ import { loadAppSession, saveAppSession } from "../player/appSession";
 import { useMediaSession } from "../player/useMediaSession";
 import { playerUIStore, usePlayerUIState } from "./stores/playerUIStore";
 import { AppLoadingScreen } from "./components/AppLoadingScreen";
+import { UpdateToast } from "./components/UpdateToast";
+import {
+  checkForUpdates,
+  isUpdateSnoozed,
+  type UpdateInfo,
+} from "../internal/updateChecker";
 import {
   Onboarding,
   OnboardingCompleteToast,
@@ -60,6 +66,7 @@ export default function App() {
   );
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(240);
+  const [queuePanelWidth, setQueuePanelWidth] = useState(340);
   const [loadingScreenState, setLoadingScreenState] = useState<"visible" | "leaving" | "hidden">("visible");
   const [onboardingStep, setOnboardingStep] = useState<OnboardingStep | null>(() =>
     localStorage.getItem(ONBOARDING_COMPLETE_KEY) === "true" ? null : "open-search"
@@ -76,6 +83,10 @@ export default function App() {
   const [showOnboardingWelcome, setShowOnboardingWelcome] = useState(
     () => localStorage.getItem(ONBOARDING_COMPLETE_KEY) !== "true"
   );
+  const [availableUpdate, setAvailableUpdate] = useState<UpdateInfo | null>(null);
+  const dismissAvailableUpdate = useCallback(() => {
+    setAvailableUpdate(null);
+  }, []);
   const loadingScreenDismissedRef = useRef(false);
   const loadingScreenStartedAtRef = useRef(performance.now());
   const sessionStateRef = useRef({ tabs, activeTabId, nextTabId });
@@ -511,6 +522,38 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [loadingScreenState, showOnboardingWelcome]);
 
+  useEffect(() => {
+    if (
+      loadingScreenState !== "hidden"
+      || showKeychainNotice
+      || showOnboardingWelcome
+    ) {
+      return;
+    }
+
+    let active = true;
+    const timer = window.setTimeout(() => {
+      void checkForUpdates()
+        .then((update) => {
+          if (
+            active
+            && update
+            && !isUpdateSnoozed(update.version)
+          ) {
+            setAvailableUpdate(update);
+          }
+        })
+        .catch(() => {
+          // Startup update checks should not interrupt the app.
+        });
+    }, 3000);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [loadingScreenState, showKeychainNotice, showOnboardingWelcome]);
+
   const handleToggleLyrics = () => {
     if (playerUIState.isLyricsOpen) {
       playerUIStore.setLyricsOpen(false);
@@ -540,7 +583,8 @@ export default function App() {
       const id = window.setTimeout(() => setShowQueueMounted(true), 0);
       return () => window.clearTimeout(id);
     }
-    setShowQueueMounted(false);
+    const id = window.setTimeout(() => setShowQueueMounted(false), 200);
+    return () => window.clearTimeout(id);
   }, [isQueuePanelOpen]);
 
   const handleKeychainNoticeContinue = () => {
@@ -671,7 +715,14 @@ export default function App() {
           showSearchBar={activeTab?.view !== "settings" && !playerUIState.isLyricsOpen}
           onOpenSearch={() => setIsSearchOpen(true)}
           fullBleedContent={playerUIState.isLyricsOpen}
-          rightPanel={showQueueMounted ? <QueuePanel onClose={() => setIsQueuePanelOpen(false)} /> : undefined}
+          rightPanelWidth={queuePanelWidth}
+          onRightPanelWidthChange={setQueuePanelWidth}
+          rightPanel={showQueueMounted ? (
+            <QueuePanel
+              isOpen={isQueuePanelOpen}
+              onClose={() => setIsQueuePanelOpen(false)}
+            />
+          ) : undefined}
         >
           {playerUIState.isLyricsOpen && activeTab?.view !== "settings" ? (
             <LyricsView onClose={() => playerUIStore.setLyricsOpen(false)} />
@@ -758,8 +809,13 @@ export default function App() {
           {showOnboardingComplete && <OnboardingCompleteToast />}
         </>
       )}
+      {availableUpdate && (
+        <UpdateToast
+          update={availableUpdate}
+          onDismiss={dismissAvailableUpdate}
+        />
+      )}
     </div>
     </TrackContextMenuProvider>
   );
 }
-
