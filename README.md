@@ -96,7 +96,9 @@ Download the **newest available installer** from the [latest release](https://gi
 
 If you do not need signing into YouTube Music you dont need to grant Keychain permissions. If you do it is recommended to click "always allow" in the popup to prevent MacOs from being annoying 
 
-## Third-Party Services 
+## Legal
+** This project DOES NOT offer any downloading functionality. This is a client providing Theme and Decorative additions for audio listening only.**
+
 **If anyone from Google reads this:** There was no official client, I just wanted a good desktop client. Thats why I made this, please don't sue me!
 **Contact me here:** team@2late.org
 
