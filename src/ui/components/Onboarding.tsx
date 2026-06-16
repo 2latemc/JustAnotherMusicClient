@@ -17,39 +17,39 @@ function getStepContent(): Record<
   { text: string; target: string; shortcut?: string }
 > {
   return {
-  "open-search": {
-    text: `Press ${primaryModifierLabel} Space, or click the search bar.`,
-    target: '[data-onboarding="search"]',
-    shortcut: `${primaryModifierLabel} Space`,
-  },
-  "type-first": {
-    text: "Enter one of your favorite songs.",
-    target: '[data-onboarding="search-panel"]',
-    shortcut: `${primaryModifierLabel} Space`,
-  },
-  "play-first": {
-    text: "Play the song.",
-    target: '[data-onboarding="search-panel"], [data-onboarding="search-results"]',
-  },
-  "new-tab": {
-    text: "Open a new tab to keep this song playing here.",
-    target: '[data-onboarding="new-tab"]',
-    shortcut: `${primaryModifierLabel} T`,
-  },
-  "type-second": {
-    text: "Search for another song in this new tab.",
-    target: '[data-onboarding="search-panel"]',
-    shortcut: `${primaryModifierLabel} Space`,
-  },
-  "play-second": {
-    text: "Play it. This tab now has its own music.",
-    target: '[data-onboarding="search-panel"], [data-onboarding="search-results"]',
-  },
-  "switch-back": {
-    text: "Switch back. Your first song is still in its tab.",
-    target: '[data-onboarding="first-tab"]',
-    shortcut: `${primaryModifierLabel} 1, 2, 3...`,
-  },
+    "open-search": {
+      text: `Press ${primaryModifierLabel} Space, or click the search bar.`,
+      target: '[data-onboarding="search"]',
+      shortcut: `${primaryModifierLabel} Space`,
+    },
+    "type-first": {
+      text: "Enter one of your favorite songs.",
+      target: '[data-onboarding="search-panel"]',
+      shortcut: `${primaryModifierLabel} Space`,
+    },
+    "play-first": {
+      text: "Play the song.",
+      target: '[data-onboarding="search-panel"], [data-onboarding="search-results"]',
+    },
+    "new-tab": {
+      text: "Open a new tab to keep this song playing here.",
+      target: '[data-onboarding="new-tab"]',
+      shortcut: `${primaryModifierLabel} T`,
+    },
+    "type-second": {
+      text: "Search for another song in this new tab.",
+      target: '[data-onboarding="search-panel"]',
+      shortcut: `${primaryModifierLabel} Space`,
+    },
+    "play-second": {
+      text: "Play it. This tab now has its own music.",
+      target: '[data-onboarding="search-panel"], [data-onboarding="search-results"]',
+    },
+    "switch-back": {
+      text: "Switch back. Your first song is still in its tab.",
+      target: '[data-onboarding="first-tab"]',
+      shortcut: `${primaryModifierLabel} 1, 2, 3...`,
+    },
   };
 }
 
@@ -201,9 +201,9 @@ export function KeychainNotice({ onContinue }: KeychainNoticeProps) {
         </p>
         <p>
           <strong>
-If you want for the popup to go away click "always allow"
-        </strong>
-        
+            If you want for the popup to go away click "always allow"
+          </strong>
+
         </p>
         <button type="button" onClick={onContinue}>
           Continue

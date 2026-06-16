@@ -1,6 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
-import { IconArrowsShuffle, IconPlayerPlay, IconUser } from "@tabler/icons-react";
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import {
+  IconArrowsShuffle,
+  IconCheck,
+  IconCopy,
+  IconLoader2,
+  IconPlayerPlay,
+  IconUser,
+  IconUserPlus,
+} from "@tabler/icons-react";
 import type { Album, Artist, ArtistPage, Playlist, Track } from "../../datasource/types";
+import { getArtworkUrlCandidates } from "../../datasource/youtube/artwork";
 import type { LibraryController } from "../../player/LibraryController";
 import type { PlayerControllerActions } from "../../player/playerStore";
 import { shuffleTracks } from "../../player/shuffleTracks";
@@ -15,14 +25,24 @@ type ReleaseFilter = "all" | "album" | "single" | "ep";
 
 function compactViews(track: Track): string {
   if (track.viewCount) {
-    return `${new Intl.NumberFormat("en", {
+    return new Intl.NumberFormat("en", {
       notation: "compact",
       maximumFractionDigits: 1,
-    }).format(track.viewCount)} views`;
+    }).format(track.viewCount);
   }
   return track.viewCountText
-    ? track.viewCountText.replace(/\bplays?\b/i, "views")
+    ? track.viewCountText.replace(/\s*\b(?:views?|plays?)\b\.?/i, "").trim()
     : "";
+}
+
+function getArtistUrl(artist: Artist): string {
+  if (artist.id.startsWith("UC")) {
+    return `https://music.youtube.com/channel/${encodeURIComponent(artist.id)}`;
+  }
+  if (artist.id) {
+    return `https://music.youtube.com/browse/${encodeURIComponent(artist.id)}`;
+  }
+  return `https://music.youtube.com/search?q=${encodeURIComponent(artist.name)}`;
 }
 
 export function ArtistView({
@@ -44,6 +64,10 @@ export function ArtistView({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<ReleaseFilter>("all");
+  const [isSubscribing, setIsSubscribing] = useState(false);
+  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!artist) return;
@@ -73,13 +97,49 @@ export function ArtistView({
     () => new Set(page?.releases.map((release) => release.releaseType) ?? []),
     [page?.releases],
   );
+  const releaseFilters = useMemo(
+    () => (["all", "album", "single", "ep"] as const)
+      .filter((type) => type === "all" || releaseTypes.has(type)),
+    [releaseTypes],
+  );
+  const activeFilterIndex = Math.max(0, releaseFilters.indexOf(filter));
   const visibleReleases = page?.releases.filter(
     (release) => filter === "all" || release.releaseType === filter,
   ) ?? [];
 
-  if (!artist) return null;
   const displayedArtist = page?.artist ?? artist;
+  const artistArtworkCandidates = useMemo(
+    () => getArtworkUrlCandidates(displayedArtist?.artworkUrl),
+    [displayedArtist?.artworkUrl],
+  );
+  const [artistArtworkIndex, setArtistArtworkIndex] = useState(0);
+  const currentArtistArtworkUrl = artistArtworkCandidates[artistArtworkIndex];
   const popularSongs = page?.popularSongs.slice(0, 6) ?? [];
+
+  useEffect(() => {
+    setArtistArtworkIndex(0);
+    setIsSubscribed(page?.subscribed ?? false);
+  }, [displayedArtist?.artworkUrl, displayedArtist?.id, page?.subscribed]);
+
+  useEffect(() => () => {
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
+  }, []);
+
+  if (!artist || !displayedArtist) return null;
+
+  const showToast = (message: string) => {
+    setToast(message);
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => setToast(null), 3000);
+  };
+
+  const showPersistentToast = (message: string) => {
+    setToast(message);
+    if (toastTimerRef.current !== null) {
+      window.clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
+  };
 
   const playShuffled = () => {
     const shuffled = shuffleTracks(page?.allSongs ?? []);
@@ -88,32 +148,100 @@ export function ArtistView({
     }
   };
 
+  const toggleArtistSubscription = async () => {
+    if (isSubscribing) return;
+    const nextSubscribed = !isSubscribed;
+    setIsSubscribing(true);
+    showPersistentToast(nextSubscribed ? "Subscribing..." : "Unsubscribing...");
+    try {
+      await libraryController.setArtistSubscribed(displayedArtist, nextSubscribed);
+      setIsSubscribed(nextSubscribed);
+      showToast(nextSubscribed ? "Subscribed" : "Unsubscribed");
+    } catch (subscribeError) {
+      showToast(
+        subscribeError instanceof Error
+          ? subscribeError.message
+          : "Unable to update this subscription.",
+      );
+    } finally {
+      setIsSubscribing(false);
+    }
+  };
+
+  const copyArtistUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(getArtistUrl(displayedArtist));
+      showToast("Url copied to clipboard");
+    } catch {
+      showToast("Unable to copy the link.");
+    }
+  };
+
   return (
     <div className={styles.root}>
       <header className={styles.header}>
         <div className={styles.portrait}>
-          {displayedArtist.artworkUrl ? (
-            <img src={displayedArtist.artworkUrl} alt="" />
+          {currentArtistArtworkUrl ? (
+            <img
+              key={currentArtistArtworkUrl}
+              src={currentArtistArtworkUrl}
+              alt=""
+              onError={() => {
+                setArtistArtworkIndex((prev) => prev + 1);
+                // If all candidates failed, try the raw URL one final time
+                // (the raw URL may work without size parameters).
+                if (artistArtworkIndex >= artistArtworkCandidates.length - 1) {
+                  setArtistArtworkIndex(0);
+                }
+              }}
+            />
           ) : (
             <IconUser size={84} stroke={1.4} />
           )}
         </div>
         <div className={styles.headerText}>
           <span className={styles.eyebrow}>Artist</span>
-          <h1>{displayedArtist.name}</h1>
+          <h1>
+            <button
+              type="button"
+              className={styles.artistTitleButton}
+              onClick={() => void copyArtistUrl()}
+              aria-label={`Copy ${displayedArtist.name} URL`}
+            >
+              <span>{displayedArtist.name}</span>
+              <IconCopy className={styles.artistTitleCopyIcon} size={24} aria-hidden="true" />
+            </button>
+          </h1>
           {displayedArtist.subscriberCount && (
             <p>{displayedArtist.subscriberCount}</p>
           )}
         </div>
-        <button
-          className={styles.shuffleButton}
-          type="button"
-          disabled={isLoading || Boolean(error) || !page?.allSongs.length}
-          onClick={playShuffled}
-        >
-          <IconArrowsShuffle size={18} />
-          <span>Shuffle</span>
-        </button>
+        <div className={styles.headerActions}>
+          <button
+            className={styles.subscribeButton}
+            type="button"
+            disabled={isLoading || Boolean(error) || isSubscribing}
+            onClick={() => void toggleArtistSubscription()}
+          >
+            {isSubscribing ? (
+              <IconLoader2 className={styles.buttonLoadingIcon} size={18} />
+            ) : isSubscribed ? (
+              <IconCheck size={18} />
+            ) : (
+              <IconUserPlus size={18} />
+            )}
+            <span>{isSubscribed ? "Subscribed" : "Subscribe"}</span>
+          </button>
+          <button
+            className={styles.shuffleButton}
+            type="button"
+            disabled={isLoading || Boolean(error) || !page?.allSongs.length}
+            onClick={playShuffled}
+          >
+            <IconArrowsShuffle size={18} />
+            <span>Shuffle</span>
+          </button>
+        </div>
       </header>
 
       {isLoading && <p className={styles.message}>Loading artist...</p>}
@@ -144,7 +272,7 @@ export function ArtistView({
                     />
                     <span className={styles.trackText}>
                       <strong>{track.title}</strong>
-                      <ArtistLinks artists={track.artists} fallback={track.artist} />
+                      <ArtistLinks artists={track.artists} fallback={track.artist} suppressArtistId={displayedArtist.id} />
                     </span>
                     <span className={styles.views}>{compactViews(track)}</span>
                     <IconPlayerPlay size={18} />
@@ -158,9 +286,16 @@ export function ArtistView({
             <section className={styles.section}>
               <div className={styles.sectionHeading}>
                 <h2>Releases</h2>
-                <div className={styles.filters} role="group" aria-label="Release type">
-                  {(["all", "album", "single", "ep"] as const)
-                    .filter((type) => type === "all" || releaseTypes.has(type))
+                <div
+                  className={styles.filters}
+                  role="group"
+                  aria-label="Release type"
+                  style={{
+                    "--active-filter-offset": `${activeFilterIndex * 100}%`,
+                    "--filter-count": releaseFilters.length,
+                  } as CSSProperties}
+                >
+                  {releaseFilters
                     .map((type) => (
                       <button
                         key={type}
@@ -178,19 +313,30 @@ export function ArtistView({
                     ))}
                 </div>
               </div>
-              <div className={styles.cardGrid}>
-                {visibleReleases.map((release) => (
-                  <AlbumCard
-                    key={release.id}
-                    artworkUrl={release.artworkUrl}
-                    title={release.title}
-                    subtitleContent={(
-                      <ArtistLinks artists={release.artists} fallback={release.artist} />
-                    )}
-                    onClick={() => onOpenAlbum(release)}
-                    onContextMenu={(event) => openAlbumMenu(event, release)}
-                  />
-                ))}
+              <div key={filter} className={`${styles.cardGrid} ${styles.releaseGrid}`}>
+                {visibleReleases.map((release) => {
+                  const hasLinkedArtists = Boolean(release.artists?.length);
+                  return (
+                    <div key={release.id} className={styles.releaseCard}>
+                      <AlbumCard
+                        artworkUrl={release.artworkUrl}
+                        title={release.title}
+                        subtitle={hasLinkedArtists ? undefined : release.artist}
+                        subtitleContent={hasLinkedArtists
+                          ? (
+                              <ArtistLinks
+                                artists={release.artists}
+                                fallback={release.artist}
+                                suppressArtistId={displayedArtist.id}
+                              />
+                            )
+                          : undefined}
+                        onClick={() => onOpenAlbum(release)}
+                        onContextMenu={(event) => openAlbumMenu(event, release)}
+                      />
+                    </div>
+                  );
+                })}
               </div>
             </section>
           )}
@@ -213,6 +359,21 @@ export function ArtistView({
             </section>
           )}
         </>
+      )}
+      {toast && createPortal(
+        <div className={styles.toast} role="status">
+          {isSubscribing ? (
+            <IconLoader2
+              className={styles.toastLoadingIcon}
+              size={18}
+              aria-hidden="true"
+            />
+          ) : (toast === "Subscribed" || toast === "Unsubscribed" || toast === "Url copied to clipboard") && (
+            <IconCheck size={18} aria-hidden="true" />
+          )}
+          <span>{toast}</span>
+        </div>,
+        document.body,
       )}
     </div>
   );

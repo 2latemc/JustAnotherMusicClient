@@ -1,3 +1,11 @@
+.artistItem {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  vertical-align: baseline;
+}
+
 .link {
   position: relative;
   z-index: 1;
@@ -12,4 +20,19 @@
 .link:hover,
 .link:focus-visible {
   text-decoration: underline;
+}
+
+.disabledItem {
+  pointer-events: none;
+  cursor: default;
+}
+
+.disabledLink {
+  color: inherit;
+  pointer-events: none;
+  user-select: none;
+}
+
+.disabledItem:hover .disabledLink {
+  text-decoration: none;
 }

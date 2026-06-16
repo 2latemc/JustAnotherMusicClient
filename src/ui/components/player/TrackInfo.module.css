@@ -157,6 +157,12 @@
   pointer-events: auto;
 }
 
+.trackArtist > span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Responsive: hide album art on smaller windows */
 @media (max-width: 800px) {
   .albumArt {

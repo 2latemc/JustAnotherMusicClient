@@ -241,14 +241,26 @@ export default function App() {
   const handleNavigateArtist = (artist: Artist, openInNewTab = false) => {
     playerUIStore.setLyricsOpen(false);
     if (!artist.id) {
+      const fallbackToSearch = () => handleSearch(artist.name, openInNewTab);
       void searchController.search(artist.name)
         .then((results) => {
-          const normalizedName = artist.name.toLocaleLowerCase();
+          const normalizedName = artist.name.trim().toLocaleLowerCase();
           const resolved = results.artists.find(
-            (candidate) => candidate.name.toLocaleLowerCase() === normalizedName,
-          ) ?? results.artists[0];
-          if (resolved) handleNavigateArtist(resolved, openInNewTab);
-        });
+            (candidate) => candidate.name.trim().toLocaleLowerCase() === normalizedName,
+          ) ?? results.artists.find((candidate) => {
+            const candidateName = candidate.name.trim().toLocaleLowerCase();
+            return candidateName.includes(normalizedName)
+              || normalizedName.includes(candidateName);
+          }) ?? results.artists[0];
+
+          if (resolved) {
+            handleNavigateArtist(resolved, openInNewTab);
+            return;
+          }
+
+          fallbackToSearch();
+        })
+        .catch(fallbackToSearch);
       return;
     }
     if (openInNewTab) {

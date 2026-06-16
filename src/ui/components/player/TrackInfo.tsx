@@ -9,9 +9,9 @@ import { usePlayerState } from "../../../player/playerStore";
 import { useLibraryState } from "../../../player/playerStore";
 import { usePlayerUIState } from "../../stores/playerUIStore";
 import { TrackArtwork } from "../TrackArtwork";
+import { ArtistLinks } from "../ArtistLinks";
 import { useTrackContextMenu } from "../TrackContextMenu";
 import styles from "./TrackInfo.module.css";
-import { ArtistLinks } from "../ArtistLinks";
 
 export function TrackInfo() {
   const state = usePlayerState();

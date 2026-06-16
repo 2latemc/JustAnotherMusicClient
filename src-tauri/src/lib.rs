@@ -151,14 +151,17 @@ fn cache_files(app: &tauri::AppHandle) -> Result<Vec<PathBuf>, CommandError> {
     let files = fs::read_dir(directory)
         .map_err(|error| cache_error(format!("cache directory read failed: {error}")))?
         .filter_map(|entry| entry.ok().map(|entry| entry.path()))
-        .filter(|path| path.extension().is_some_and(|extension| extension == "json"))
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "json")
+        })
         .collect::<Vec<_>>();
     Ok(files)
 }
 
 fn read_cache_entry(path: &Path) -> Result<CacheEntry, CommandError> {
-    let bytes = fs::read(path)
-        .map_err(|error| cache_error(format!("cache entry read failed: {error}")))?;
+    let bytes =
+        fs::read(path).map_err(|error| cache_error(format!("cache entry read failed: {error}")))?;
     serde_json::from_slice(&bytes)
         .map_err(|error| cache_error(format!("cache entry parse failed: {error}")))
 }
@@ -241,13 +244,13 @@ fn cache_set(
         .map_err(|_| cache_error("cache lock unavailable"))?;
     let path = cache_entry_path(&app, &key)?;
     let existing = if path.exists() {
-        read_cache_entry(&path).ok().filter(|entry| entry.key == key)
+        read_cache_entry(&path)
+            .ok()
+            .filter(|entry| entry.key == key)
     } else {
         None
     };
-    let changed = existing
-        .as_ref()
-        .map_or(true, |entry| entry.value != value);
+    let changed = existing.as_ref().map_or(true, |entry| entry.value != value);
     let timestamp = now_ms();
     let entry = CacheEntry {
         key,
@@ -289,12 +292,7 @@ fn cache_set_max_bytes(
         .0
         .lock()
         .map_err(|_| cache_error("cache lock unavailable"))?;
-    write_json_file(
-        &cache_settings_path(&app)?,
-        &CacheSettings {
-            max_bytes,
-        },
-    )?;
+    write_json_file(&cache_settings_path(&app)?, &CacheSettings { max_bytes })?;
     enforce_cache_limit(&app)?;
     calculate_cache_stats(&app)
 }
@@ -331,10 +329,7 @@ fn quit_app(app: tauri::AppHandle) {
 
 #[tauri::command]
 fn frontend_log(level: String, context: String, payload: String) {
-    eprintln!(
-        "[internal][frontend][{}] {} {}",
-        level, context, payload
-    );
+    eprintln!("[internal][frontend][{}] {} {}", level, context, payload);
 }
 
 fn youtube_keyring_entry() -> Result<keyring::Entry, CommandError> {
@@ -344,8 +339,10 @@ fn youtube_keyring_entry() -> Result<keyring::Entry, CommandError> {
 }
 
 fn youtube_cookie_keyring_entry() -> Result<keyring::Entry, CommandError> {
-    keyring::Entry::new(KEYRING_SERVICE, YOUTUBE_COOKIE_KEYRING_USER).map_err(|error| CommandError {
-        message: format!("credential store unavailable: {error}"),
+    keyring::Entry::new(KEYRING_SERVICE, YOUTUBE_COOKIE_KEYRING_USER).map_err(|error| {
+        CommandError {
+            message: format!("credential store unavailable: {error}"),
+        }
     })
 }
 
@@ -441,10 +438,7 @@ fn load_or_create_cookie_encryption_key() -> Result<[u8; 32], CommandError> {
 }
 
 #[cfg(target_os = "macos")]
-fn save_youtube_music_cookie(
-    app: &tauri::AppHandle,
-    cookie: &str,
-) -> Result<(), CommandError> {
+fn save_youtube_music_cookie(app: &tauri::AppHandle, cookie: &str) -> Result<(), CommandError> {
     let key = load_or_create_cookie_encryption_key()?;
     let cipher = Aes256Gcm::new_from_slice(&key).map_err(|error| CommandError {
         message: format!("session encryption setup failed: {error}"),
@@ -472,10 +466,7 @@ fn save_youtube_music_cookie(
 }
 
 #[cfg(not(target_os = "macos"))]
-fn save_youtube_music_cookie(
-    _app: &tauri::AppHandle,
-    cookie: &str,
-) -> Result<(), CommandError> {
+fn save_youtube_music_cookie(_app: &tauri::AppHandle, cookie: &str) -> Result<(), CommandError> {
     save_youtube_music_cookie_entries(cookie)
 }
 
@@ -552,7 +543,9 @@ fn load_youtube_music_cookie_entries() -> Result<Option<String>, CommandError> {
                 let chunk = youtube_cookie_chunk_entry(index)?
                     .get_password()
                     .map_err(|error| CommandError {
-                        message: format!("YouTube Music session chunk {index} load failed: {error}"),
+                        message: format!(
+                            "YouTube Music session chunk {index} load failed: {error}"
+                        ),
                     })?;
                 cookie.push_str(&chunk);
             }
@@ -616,9 +609,7 @@ fn load_encrypted_youtube_music_cookie(
 }
 
 #[tauri::command]
-fn load_youtube_music_cookie(
-    app: tauri::AppHandle,
-) -> Result<Option<String>, CommandError> {
+fn load_youtube_music_cookie(app: tauri::AppHandle) -> Result<Option<String>, CommandError> {
     #[cfg(target_os = "macos")]
     {
         if let Some(cookie) = load_encrypted_youtube_music_cookie(&app)? {
@@ -709,9 +700,11 @@ async fn sign_in_youtube_music(app: tauri::AppHandle) -> Result<String, CommandE
             .filter(|cookie| cookie_domain_matches("music.youtube.com", cookie.domain()))
             .collect::<Vec<_>>();
         #[cfg(not(target_os = "macos"))]
-        let cookies = window.cookies_for_url(cookie_url.clone()).map_err(|error| CommandError {
-            message: format!("unable to read YouTube Music session: {error}"),
-        })?;
+        let cookies = window
+            .cookies_for_url(cookie_url.clone())
+            .map_err(|error| CommandError {
+                message: format!("unable to read YouTube Music session: {error}"),
+            })?;
         let cookie_names = cookies
             .iter()
             .map(|cookie| cookie.name())
@@ -845,10 +838,7 @@ struct ProxyHttpResponse {
     body_base64: String,
 }
 
-fn collect_json_renderer_counts(
-    value: &serde_json::Value,
-    counts: &mut HashMap<String, usize>,
-) {
+fn collect_json_renderer_counts(value: &serde_json::Value, counts: &mut HashMap<String, usize>) {
     match value {
         serde_json::Value::Object(object) => {
             for (key, child) in object {
@@ -873,7 +863,10 @@ fn collect_json_renderer_counts(
 fn collect_message_text(value: &serde_json::Value, messages: &mut Vec<String>) {
     match value {
         serde_json::Value::Object(object) => {
-            if let Some(renderer) = object.get("messageRenderer").and_then(|value| value.as_object()) {
+            if let Some(renderer) = object
+                .get("messageRenderer")
+                .and_then(|value| value.as_object())
+            {
                 for field in ["text", "subtext"] {
                     if let Some(runs) = renderer
                         .get(field)
@@ -974,15 +967,23 @@ async fn fetch_youtube_music_audio(video_id: String) -> Result<AudioPayload, Com
     );
 
     let client = reqwest::Client::new();
-    
+
     // Mobile and TV clients are preferred because they are more likely to
     // return direct media URLs that do not require player-JavaScript deciphering.
     let api_attempts = vec![
         ("YouTube iOS", YOUTUBE_PLAYER_API_URL, create_ios_context()),
-        ("YouTube ANDROID", YOUTUBE_PLAYER_API_URL, create_android_context()),
+        (
+            "YouTube ANDROID",
+            YOUTUBE_PLAYER_API_URL,
+            create_android_context(),
+        ),
         ("YouTube TV", YOUTUBE_PLAYER_API_URL, create_tv_context()),
         ("YouTube WEB", YOUTUBE_PLAYER_API_URL, create_web_context()),
-        ("YouTube Music WEB_REMIX", YOUTUBE_MUSIC_PLAYER_API_URL, create_web_remix_context()),
+        (
+            "YouTube Music WEB_REMIX",
+            YOUTUBE_MUSIC_PLAYER_API_URL,
+            create_web_remix_context(),
+        ),
     ];
 
     let mut failures = Vec::new();
@@ -1115,10 +1116,8 @@ async fn try_youtube_api(
         "contentCheckOk": true
     });
 
-    let request_body_str = serde_json::to_string(&request_body).map_err(|error| {
-        CommandError {
-            message: format!("json serialize failed: {error}"),
-        }
+    let request_body_str = serde_json::to_string(&request_body).map_err(|error| CommandError {
+        message: format!("json serialize failed: {error}"),
     })?;
 
     let referer = if attempt_name.contains("Music") {
@@ -1175,24 +1174,18 @@ async fn try_youtube_api(
         .body(request_body_str)
         .send()
         .await
-        .map_err(|error| {
-            CommandError {
-                message: format!("api request failed: {error}"),
-            }
+        .map_err(|error| CommandError {
+            message: format!("api request failed: {error}"),
         })?;
 
     let response_status = response.status();
-    let response_text = response.text().await.map_err(|error| {
-        CommandError {
-            message: format!("response read failed: {error}"),
-        }
+    let response_text = response.text().await.map_err(|error| CommandError {
+        message: format!("response read failed: {error}"),
     })?;
     if !response_status.is_success() {
         let response_preview = response_text.chars().take(500).collect::<String>();
         return Err(CommandError {
-            message: format!(
-                "api request returned {response_status}: {response_preview}"
-            ),
+            message: format!("api request returned {response_status}: {response_preview}"),
         });
     }
 
@@ -1208,19 +1201,17 @@ async fn try_youtube_api(
     );
     eprintln!(
         "[internal][tauri][debug] YOUTUBE API RESPONSE - {} - COMPLETE RESPONSE TEXT:\n{}",
-        attempt_name,
-        response_text
+        attempt_name, response_text
     );
     eprintln!(
         "[internal][tauri][debug] YOUTUBE API RESPONSE - {} - END",
         attempt_name
     );
 
-    let response_json: serde_json::Value = serde_json::from_str(&response_text).map_err(|error| {
-        CommandError {
+    let response_json: serde_json::Value =
+        serde_json::from_str(&response_text).map_err(|error| CommandError {
             message: format!("json parse failed: {error}"),
-        }
-    })?;
+        })?;
     let visitor_data = response_json
         .get("responseContext")
         .and_then(|context| context.get("visitorData"))
@@ -1234,7 +1225,10 @@ async fn try_youtube_api(
     eprintln!(
         "[internal][tauri][debug] YOUTUBE API RESPONSE - {} - TOP LEVEL KEYS: {:?}",
         attempt_name,
-        response_json.as_object().map(|obj| obj.keys().collect::<Vec<_>>()).unwrap_or_default()
+        response_json
+            .as_object()
+            .map(|obj| obj.keys().collect::<Vec<_>>())
+            .unwrap_or_default()
     );
 
     // Check for playability status first
@@ -1244,10 +1238,11 @@ async fn try_youtube_api(
             attempt_name,
             serde_json::to_string_pretty(playability_status).unwrap_or_default()
         );
-        
+
         if let Some(status) = playability_status.get("status").and_then(|s| s.as_str()) {
             if status != "OK" {
-                let reason = playability_status.get("reason")
+                let reason = playability_status
+                    .get("reason")
                     .and_then(|r| r.as_str())
                     .unwrap_or("Unknown reason");
                 eprintln!(
@@ -1274,8 +1269,7 @@ async fn try_youtube_api(
     let has_streaming_data = response_json.get("streamingData").is_some();
     eprintln!(
         "[internal][tauri][debug] YOUTUBE API RESPONSE - {} - HAS STREAMING DATA: {}",
-        attempt_name,
-        has_streaming_data
+        attempt_name, has_streaming_data
     );
 
     if has_streaming_data {
@@ -1283,7 +1277,10 @@ async fn try_youtube_api(
             eprintln!(
                 "[internal][tauri][debug] YOUTUBE API RESPONSE - {} - STREAMING DATA KEYS: {:?}",
                 attempt_name,
-                streaming_data.as_object().map(|obj| obj.keys().collect::<Vec<_>>()).unwrap_or_default()
+                streaming_data
+                    .as_object()
+                    .map(|obj| obj.keys().collect::<Vec<_>>())
+                    .unwrap_or_default()
             );
 
             // Log adaptive formats if they exist
@@ -1313,7 +1310,9 @@ async fn try_youtube_api(
 
                     for format in formats_array {
                         if let Some(format_obj) = format.as_object() {
-                            if let Some(mime_type) = format_obj.get("mimeType").and_then(|m| m.as_str()) {
+                            if let Some(mime_type) =
+                                format_obj.get("mimeType").and_then(|m| m.as_str())
+                            {
                                 if mime_type.contains("audio") {
                                     audio_count += 1;
                                     if format_obj.get("url").is_some() {
@@ -1389,7 +1388,11 @@ async fn try_youtube_api(
                         if let Some(url) = format_obj.get("url").and_then(|u| u.as_str()) {
                             best_audio_url = Some(url.to_string());
                             best_mime_type = Some(
-                                mime_str.split(';').next().unwrap_or("audio/mp4").to_string(),
+                                mime_str
+                                    .split(';')
+                                    .next()
+                                    .unwrap_or("audio/mp4")
+                                    .to_string(),
                             );
                             best_is_mp4 = is_mp4;
                             best_bitrate = bitrate as u32;
@@ -1432,14 +1435,9 @@ async fn try_youtube_api(
             .header("Sec-Fetch-Site", "cross-site");
     }
 
-    let audio_response = audio_request
-        .send()
-        .await
-        .map_err(|error| {
-            CommandError {
-                message: format!("download failed: {error}"),
-            }
-        })?;
+    let audio_response = audio_request.send().await.map_err(|error| CommandError {
+        message: format!("download failed: {error}"),
+    })?;
 
     if !audio_response.status().is_success() {
         return Err(CommandError {
@@ -1447,10 +1445,8 @@ async fn try_youtube_api(
         });
     }
 
-    let audio_body = audio_response.bytes().await.map_err(|error| {
-        CommandError {
-            message: format!("download body read failed: {error}"),
-        }
+    let audio_body = audio_response.bytes().await.map_err(|error| CommandError {
+        message: format!("download body read failed: {error}"),
     })?;
 
     Ok(AudioPayload {
@@ -1460,7 +1456,9 @@ async fn try_youtube_api(
 }
 
 #[tauri::command]
-async fn proxy_http_request(input: ProxyHttpRequestInput) -> Result<ProxyHttpResponse, CommandError> {
+async fn proxy_http_request(
+    input: ProxyHttpRequestInput,
+) -> Result<ProxyHttpResponse, CommandError> {
     let started_at = Instant::now();
     let request_url = url::Url::parse(&input.url).map_err(|error| CommandError {
         message: format!("invalid URL: {error}"),
@@ -1478,7 +1476,7 @@ async fn proxy_http_request(input: ProxyHttpRequestInput) -> Result<ProxyHttpRes
         input.headers.len(),
         input.body_base64.is_some()
     );
-    
+
     eprintln!("[internal][tauri][debug] proxy_http_request headers:");
     for (key, value) in &input.headers {
         let normalized_key = key.to_ascii_lowercase();
@@ -1506,9 +1504,11 @@ async fn proxy_http_request(input: ProxyHttpRequestInput) -> Result<ProxyHttpRes
         .host_str()
         .is_some_and(|host| host.ends_with(".googlevideo.com"))
     {
-        let signed_ip = request_url
-            .query_pairs()
-            .find_map(|(key, value)| (key == "ip").then(|| value.parse::<IpAddr>().ok()).flatten());
+        let signed_ip = request_url.query_pairs().find_map(|(key, value)| {
+            (key == "ip")
+                .then(|| value.parse::<IpAddr>().ok())
+                .flatten()
+        });
 
         if let Some(signed_ip) = signed_ip {
             let local_address = match signed_ip {
@@ -1524,11 +1524,9 @@ async fn proxy_http_request(input: ProxyHttpRequestInput) -> Result<ProxyHttpRes
         }
     }
 
-    let client = client_builder
-        .build()
-        .map_err(|error| CommandError {
-            message: format!("HTTP client creation failed: {error}"),
-        })?;
+    let client = client_builder.build().map_err(|error| CommandError {
+        message: format!("HTTP client creation failed: {error}"),
+    })?;
     let mut request = client.request(method, &input.url);
 
     for (key, value) in &input.headers {
@@ -1622,7 +1620,10 @@ async fn proxy_http_request(input: ProxyHttpRequestInput) -> Result<ProxyHttpRes
 
 #[tauri::command]
 fn discord_rpc_update(
-    discord_manager: tauri::State<'_, std::sync::Arc<std::sync::Mutex<discord_rpc::DiscordRpcManager>>>,
+    discord_manager: tauri::State<
+        '_,
+        std::sync::Arc<std::sync::Mutex<discord_rpc::DiscordRpcManager>>,
+    >,
     title: String,
     artist: String,
     album: String,
@@ -1657,7 +1658,10 @@ fn discord_rpc_update(
 
 #[tauri::command]
 fn discord_rpc_clear(
-    discord_manager: tauri::State<'_, std::sync::Arc<std::sync::Mutex<discord_rpc::DiscordRpcManager>>>,
+    discord_manager: tauri::State<
+        '_,
+        std::sync::Arc<std::sync::Mutex<discord_rpc::DiscordRpcManager>>,
+    >,
 ) -> Result<(), CommandError> {
     match discord_manager.lock() {
         Ok(manager) => {
@@ -1675,12 +1679,16 @@ fn discord_rpc_clear(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Initialize Discord RPC manager
-    let discord_manager = std::sync::Arc::new(std::sync::Mutex::new(discord_rpc::DiscordRpcManager::new()));
-    
+    let discord_manager =
+        std::sync::Arc::new(std::sync::Mutex::new(discord_rpc::DiscordRpcManager::new()));
+
     // Try to connect to Discord immediately
     if let Ok(manager) = discord_manager.lock() {
         if let Err(e) = manager.connect() {
-            eprintln!("[internal][discord_rpc] failed to initialize Discord connection: {}", e);
+            eprintln!(
+                "[internal][discord_rpc] failed to initialize Discord connection: {}",
+                e
+            );
             // This is not fatal - Discord might not be running, try again later
         }
     }

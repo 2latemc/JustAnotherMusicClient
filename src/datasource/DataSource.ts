@@ -29,6 +29,7 @@ export abstract class DataSource {
   getAlbumTracks?(album: Album, onUpdate?: (tracks: Track[]) => void): Promise<Track[]>;
   setAlbumSaved?(album: Album, saved: boolean): Promise<void>;
   getArtist?(artistId: string, onUpdate?: (artist: ArtistPage) => void): Promise<ArtistPage>;
+  setArtistSubscribed?(artistId: string, subscribed: boolean): Promise<void>;
   getPlaylistTracks?(playlist: Playlist, onUpdate?: (tracks: Track[]) => void): Promise<Track[]>;
   setPlaylistSaved?(playlist: Playlist, saved: boolean): Promise<void>;
   addTrackToPlaylist?(

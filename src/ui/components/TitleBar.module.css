@@ -28,6 +28,12 @@
   align-items: center;
   gap: 10px;
 }
+
+.windowControlsWindows {
+  gap: 0;
+  align-self: stretch;
+  margin-right: -12px;
+}
 .homeButton {
   align-self: flex-start;
   height: 51px;
@@ -161,6 +167,7 @@
 }
 
 .windowButtonMinimize {
+  order: 2;
   background: #ffbd2f;
 }
 
@@ -172,7 +179,21 @@
   background: #e7a60b;
 }
 
+.windowButtonMaximize {
+  order: 1;
+  background: #28c840;
+}
+
+.windowButtonMaximize:hover {
+  background: #35d74d;
+}
+
+.windowButtonMaximize:active {
+  background: #1fb034;
+}
+
 .windowButtonClose {
+  order: 3;
   background: #ff5f57;
 }
 
@@ -182,4 +203,53 @@
 
 .windowButtonClose:active {
   background: #e44a43;
+}
+
+.windowControlsWindows .windowButton {
+  width: 46px;
+  height: 100%;
+  border-radius: 0;
+  background: transparent;
+}
+
+.windowControlsWindows .windowButtonMinimize {
+  order: 1;
+}
+
+.windowControlsWindows .windowButtonMaximize {
+  order: 2;
+}
+
+.windowControlsWindows .windowButtonClose {
+  order: 3;
+}
+
+.windowControlsWindows .windowIcon {
+  opacity: 1;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.windowControlsWindows .windowButtonMinimize:hover,
+.windowControlsWindows .windowButtonMaximize:hover {
+  background: rgb(255 255 255 / 10%);
+}
+
+.windowControlsWindows .windowButtonMinimize:active,
+.windowControlsWindows .windowButtonMaximize:active {
+  background: rgb(255 255 255 / 16%);
+}
+
+.windowControlsWindows .windowButtonClose:hover {
+  background: #c42b1c;
+}
+
+.windowControlsWindows .windowButtonClose:active {
+  background: #9f2015;
+}
+
+.windowControlsWindows .windowButtonClose:hover .windowIcon,
+.windowControlsWindows .windowButtonClose:active .windowIcon {
+  color: white;
 }

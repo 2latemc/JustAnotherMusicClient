@@ -1,4 +1,5 @@
 .root {
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   gap: 32px;
@@ -30,8 +31,64 @@
 
 .headerText h1 {
   margin: 5px 0 7px;
-  font-size: clamp(38px, 6vw, 72px);
+  font-size: clamp(38px, 8cqi, 72px);
   line-height: 0.95;
+  min-width: 0;
+}
+
+.artistTitleButton {
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  line-height: inherit;
+  text-align: left;
+  transition:
+    color var(--transition-fast),
+    filter var(--transition-fast),
+    text-shadow var(--transition-fast);
+}
+
+.artistTitleButton span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.artistTitleCopyIcon {
+  flex-shrink: 0;
+  opacity: 0;
+  transform: translateY(2px) scale(0.94);
+  transition:
+    opacity var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.artistTitleButton:hover,
+.artistTitleButton:focus-visible {
+  color: #fff;
+  filter: drop-shadow(0 0 14px rgb(255 0 51 / 34%));
+  text-shadow:
+    0 0 14px rgb(255 0 51 / 44%),
+    0 0 30px rgb(255 255 255 / 16%);
+}
+
+.artistTitleButton:hover .artistTitleCopyIcon,
+.artistTitleButton:focus-visible .artistTitleCopyIcon {
+  opacity: 1;
+  transform: translateY(2px) scale(1);
+}
+
+.artistTitleButton:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 4px;
+  border-radius: 6px;
 }
 
 .headerText p,
@@ -47,18 +104,79 @@
   text-transform: uppercase;
 }
 
-.shuffleButton {
+.headerActions {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 11px 18px;
-  border: 0;
-  border-radius: 999px;
-  font-weight: 700;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
 }
 
-.shuffleButton:disabled {
+.shuffleButton,
+.subscribeButton {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 18px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.subscribeButton {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-text-primary);
+  box-shadow: 0 8px 20px rgb(255 0 51 / 18%);
+}
+
+.shuffleButton {
+  border: 1px solid rgb(255 255 255 / 14%);
+  background: rgb(255 255 255 / 10%);
+  color: var(--color-text-primary);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 10%);
+}
+
+.subscribeButton:hover:not(:disabled),
+.subscribeButton:focus-visible:not(:disabled) {
+  border-color: var(--color-accent-hover);
+  background: transparent;
+  color: var(--color-accent-hover);
+  box-shadow: inset 0 0 0 1px var(--color-accent-hover);
+}
+
+.shuffleButton:hover:not(:disabled),
+.shuffleButton:focus-visible:not(:disabled) {
+  border-color: rgb(255 255 255 / 24%);
+  background: rgb(255 255 255 / 16%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 14%),
+    0 10px 24px rgb(0 0 0 / 24%);
+}
+
+.shuffleButton:focus-visible,
+.subscribeButton:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+
+.shuffleButton:disabled,
+.subscribeButton:disabled {
   opacity: 0.45;
+  cursor: default;
+}
+
+.buttonLoadingIcon {
+  animation: loadingIconSpin 800ms linear infinite;
 }
 
 .section {
@@ -133,13 +251,14 @@
 
 .views {
   font-size: 13px;
+  font-weight: 700;
 }
 
 .filters {
+  position: relative;
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: minmax(72px, 1fr);
-  gap: 2px;
   padding: 2px;
   border: 1px solid rgb(255 255 255 / 6%);
   border-radius: var(--radius-full);
@@ -147,7 +266,29 @@
   box-shadow: inset 0 1px 2px rgb(0 0 0 / 18%);
 }
 
+.filters::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  z-index: 0;
+  width: calc((100% - 4px) / var(--filter-count));
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 14%),
+    0 3px 10px rgb(255 0 51 / 22%);
+  transform: translateX(var(--active-filter-offset));
+  transition:
+    transform 220ms var(--easing-smooth),
+    background var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
 .filters button {
+  position: relative;
+  z-index: 1;
   min-width: 0;
   min-height: 32px;
   display: flex;
@@ -175,13 +316,13 @@
 
 .filters .activeFilter {
   color: #fff;
-  background: var(--color-accent);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 14%),
-    0 3px 10px rgb(255 0 51 / 22%);
 }
 
 .filters .activeFilter:hover {
+  background: transparent;
+}
+
+.filters:has(.activeFilter:hover)::before {
   background: var(--color-accent-hover);
 }
 
@@ -191,9 +332,101 @@
   gap: 18px;
 }
 
+.releaseGrid {
+  animation: releaseGridSwitch 180ms var(--easing-smooth) both;
+}
+
+.releaseCard {
+  animation: releaseCardIn 240ms var(--easing-smooth) both;
+}
+
+.releaseCard:nth-child(2) {
+  animation-delay: 18ms;
+}
+
+.releaseCard:nth-child(3) {
+  animation-delay: 36ms;
+}
+
+.releaseCard:nth-child(4) {
+  animation-delay: 54ms;
+}
+
+.releaseCard:nth-child(n + 5) {
+  animation-delay: 72ms;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 106px;
+  z-index: 1300;
+  max-width: min(440px, calc(100% - 32px));
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 15px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: var(--radius-full);
+  background: rgba(35, 35, 37, 0.94);
+  color: var(--color-text-primary);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45);
+  transform: translateX(-50%);
+}
+
+.toastLoadingIcon {
+  animation: loadingIconSpin 800ms linear infinite;
+}
+
+@keyframes loadingIconSpin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes releaseGridSwitch {
+  from {
+    opacity: 0.72;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes releaseCardIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (max-width: 1040px) {
+  .header {
+    grid-template-columns: 180px minmax(0, 1fr);
+    align-items: end;
+  }
+
+  .headerActions {
+    grid-column: 2;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
 @media (max-width: 760px) {
   .header {
     grid-template-columns: 120px minmax(0, 1fr);
+    align-items: center;
   }
 
   .portrait {
@@ -201,9 +434,10 @@
     height: 120px;
   }
 
-  .shuffleButton {
-    grid-column: 1 / -1;
+  .headerActions {
+    grid-column: 2;
     justify-self: start;
+    flex-wrap: wrap;
   }
 
   .sectionHeading {
@@ -217,5 +451,127 @@
 
   .track {
     grid-template-columns: 24px 44px minmax(0, 1fr) 24px;
+  }
+}
+
+@container (max-width: 1040px) {
+  .header {
+    grid-template-columns: 180px minmax(0, 1fr);
+    align-items: end;
+  }
+
+  .headerActions {
+    grid-column: 2;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
+@container (max-width: 760px) {
+  .header {
+    grid-template-columns: 120px minmax(0, 1fr);
+    align-items: center;
+  }
+
+  .portrait {
+    width: 120px;
+    height: 120px;
+  }
+
+  .headerActions {
+    grid-column: 2;
+    justify-self: start;
+    flex-wrap: wrap;
+  }
+
+  .sectionHeading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .views {
+    display: none;
+  }
+
+  .track {
+    grid-template-columns: 24px 44px minmax(0, 1fr) 24px;
+  }
+}
+
+@media (max-width: 560px) {
+  .root {
+    padding-inline: 20px;
+  }
+
+  .header {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 16px;
+  }
+
+  .portrait {
+    width: 112px;
+    height: 112px;
+  }
+
+  .headerText,
+  .headerActions {
+    grid-column: 1;
+    width: 100%;
+  }
+
+  .headerText h1 {
+    font-size: clamp(34px, 14vw, 52px);
+  }
+
+  .artistTitleButton {
+    width: 100%;
+  }
+
+  .headerActions {
+    justify-content: flex-start;
+  }
+}
+
+@container (max-width: 560px) {
+  .header {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 16px;
+  }
+
+  .portrait {
+    width: 112px;
+    height: 112px;
+  }
+
+  .headerText,
+  .headerActions {
+    grid-column: 1;
+    width: 100%;
+  }
+
+  .headerText h1 {
+    font-size: clamp(34px, 14cqi, 52px);
+  }
+
+  .artistTitleButton {
+    width: 100%;
+  }
+
+  .headerActions {
+    justify-content: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .filters::before,
+  .releaseGrid,
+  .releaseCard,
+  .artistTitleCopyIcon,
+  .buttonLoadingIcon,
+  .toastLoadingIcon {
+    animation: none;
+    transition: none;
   }
 }

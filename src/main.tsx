@@ -4,12 +4,14 @@ import App from "./ui/App";
 import "./ui/styles/global.css";
 import { logInternalError, logInternalInfo } from "./internal/logging";
 import { applyPaperPcMode } from "./ui/settings/paperPcMode";
+import { applyNativeWindowControls } from "./ui/settings/windowControls";
 import { applyPlatformAttributes } from "./ui/platform";
 import { DiscordRpcService } from "./player/DiscordRPC";
 
 logInternalInfo("main.bootstrap start");
 applyPlatformAttributes();
 applyPaperPcMode();
+void applyNativeWindowControls();
 
 // Initialize Discord RPC (non-blocking)
 logInternalInfo("[Discord RPC] Initializing Discord RPC service");

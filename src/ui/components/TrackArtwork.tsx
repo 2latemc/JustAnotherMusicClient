@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { IconDisc } from "@tabler/icons-react";
+import { getArtworkUrlCandidates } from "../../datasource/youtube/artwork";
 import styles from "./TrackArtwork.module.css";
 
 interface TrackArtworkProps {
@@ -15,22 +16,27 @@ export function TrackArtwork({
   iconSize = 24,
   loading = "lazy",
 }: TrackArtworkProps) {
-  const [failed, setFailed] = useState(false);
+  const artworkCandidates = useMemo(
+    () => getArtworkUrlCandidates(artworkUrl),
+    [artworkUrl],
+  );
+  const [artworkIndex, setArtworkIndex] = useState(0);
+  const currentArtworkUrl = artworkCandidates[artworkIndex];
 
   useEffect(() => {
-    setFailed(false);
+    setArtworkIndex(0);
   }, [artworkUrl]);
 
   return (
     <span className={`${styles.root} ${className ?? ""}`}>
-      {!artworkUrl || failed ? (
+      {!currentArtworkUrl ? (
         <IconDisc size={iconSize} aria-hidden="true" />
       ) : (
         <img
-          src={artworkUrl}
+          src={currentArtworkUrl}
           alt=""
           loading={loading}
-          onError={() => setFailed(true)}
+          onError={() => setArtworkIndex((index) => index + 1)}
         />
       )}
     </span>

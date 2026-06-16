@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   IconBug,
   IconDatabase,
+  IconLayoutSidebarRight,
   IconLogin,
   IconLogout,
   IconLeaf,
@@ -32,6 +33,12 @@ import {
   setAutostartEnabled,
 } from "../settings/autostart";
 import { setPaperPcMode, usePaperPcMode } from "../settings/paperPcMode";
+import {
+  setNativeWindowControls,
+  setWindowsStyleWindowControls,
+  useNativeWindowControls,
+  useWindowsStyleWindowControls,
+} from "../settings/windowControls";
 import styles from "./SettingsPage.module.css";
 
 const GITHUB_REPOSITORY_URL = "https://github.com/2latemc/JustAnotherMusicClient";
@@ -65,6 +72,8 @@ export function SettingsPage({
   const [autostartLoading, setAutostartLoading] = useState(true);
   const [autostartError, setAutostartError] = useState<string | null>(null);
   const paperPcMode = usePaperPcMode();
+  const windowsStyleWindowControls = useWindowsStyleWindowControls();
+  const nativeWindowControls = useNativeWindowControls();
   const account = libraryState.library?.account;
   const isSignedIn = libraryState.status === "ready" && account;
   const authBusy = libraryState.status === "restoring"
@@ -357,6 +366,45 @@ export function SettingsPage({
         </label>
 
         {autostartError && <p className={styles.error}>{autostartError}</p>}
+      </section>
+
+      <section className={styles.card} aria-labelledby="window-settings-title">
+        <div className={styles.cardHeader}>
+          <div>
+            <h2 id="window-settings-title">Window controls</h2>
+            <p>Choose the title bar buttons shown around the app.</p>
+          </div>
+          <IconLayoutSidebarRight className={styles.cardIcon} size={22} />
+        </div>
+
+        <label className={styles.toggleRow}>
+          <span className={styles.toggleDescription}>
+            <strong>Windows-style controls</strong>
+            <span>Use minimize, maximize, and close buttons with square edges.</span>
+          </span>
+          <input
+            className={styles.toggleInput}
+            type="checkbox"
+            checked={windowsStyleWindowControls}
+            disabled={nativeWindowControls}
+            onChange={(event) => setWindowsStyleWindowControls(event.target.checked)}
+          />
+          <span className={styles.toggle} aria-hidden="true" />
+        </label>
+
+        <label className={styles.toggleRow}>
+          <span className={styles.toggleDescription}>
+            <strong>Use OS native controls</strong>
+            <span>Let the operating system draw the window frame and title bar.</span>
+          </span>
+          <input
+            className={styles.toggleInput}
+            type="checkbox"
+            checked={nativeWindowControls}
+            onChange={(event) => setNativeWindowControls(event.target.checked)}
+          />
+          <span className={styles.toggle} aria-hidden="true" />
+        </label>
       </section>
 
       <section className={styles.card} aria-labelledby="performance-settings-title">

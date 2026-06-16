@@ -173,6 +173,9 @@ export function SearchOverlay({
   })();
   const remotePreview = (() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
+    // Prefer artists: if any artist name matches exactly or has high
+    // similarity to the query, show the artist preview card instead of
+    // a track. Artists are the most relevant result for artist names.
     const exactArtist = searchResults.artists.find(
       (artist) => artist.name.toLocaleLowerCase() === normalizedQuery,
     );
@@ -181,11 +184,18 @@ export function SearchOverlay({
       (track) => track.title.toLocaleLowerCase() === normalizedQuery,
     );
     if (exactTrack) return { type: "track" as const, value: exactTrack };
+    // Check for partial/close artist matches before falling back to the
+    // first track. A partial artist match is more informative than an
+    // unrelated song.
     const closeArtist = searchResults.artists.find((artist) =>
       artist.name.toLocaleLowerCase().includes(normalizedQuery)
       || normalizedQuery.includes(artist.name.toLocaleLowerCase())
     );
     if (closeArtist) return { type: "artist" as const, value: closeArtist };
+    const closeTrack = searchResults.tracks.find((track) =>
+      track.title.toLocaleLowerCase().includes(normalizedQuery)
+    );
+    if (closeTrack) return { type: "track" as const, value: closeTrack };
     if (searchResults.tracks[0]) {
       return { type: "track" as const, value: searchResults.tracks[0] };
     }

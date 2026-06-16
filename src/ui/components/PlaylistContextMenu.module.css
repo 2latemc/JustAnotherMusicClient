@@ -10,6 +10,7 @@
   backdrop-filter: blur(22px);
   -webkit-backdrop-filter: blur(22px);
   transform-origin: top left;
+  animation: contextMenuIn 110ms var(--easing-smooth);
 }
 
 .menu button {
@@ -35,24 +36,51 @@
 
 .toast {
   position: fixed;
+  left: 50%;
+  bottom: 106px;
   z-index: 1300;
-  right: 24px;
-  bottom: 104px;
+  max-width: min(440px, calc(100% - 32px));
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  border-radius: 9px;
-  background: #242424;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+  gap: 9px;
+  padding: 11px 15px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: var(--radius-full);
+  background: rgba(35, 35, 37, 0.94);
+  color: var(--color-text-primary);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45);
+  transform: translateX(-50%);
 }
 
-.loading {
-  animation: spin 0.8s linear infinite;
+.toastLoadingIcon {
+  animation: loadingIconSpin 800ms linear infinite;
 }
 
-@keyframes spin {
+@keyframes loadingIconSpin {
+  from {
+    transform: rotate(0deg);
+  }
+
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes contextMenuIn {
+  from {
+    opacity: 0;
+    transform: translateY(-3px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu,
+  .toastLoadingIcon {
+    animation: none;
   }
 }

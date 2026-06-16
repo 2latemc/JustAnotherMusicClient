@@ -71,7 +71,8 @@ Download the **newest available installer** from the [latest release](https://gi
 </a>
 
 ## Roadmap 📌
-- **Full Linux and MacOS support**
+- ~~Full Linux and MacOS support~~
+- Last.fm integration
 - **Better lyrics consistency** (some songs still don't have them)
 - **Artist Pages** with monthly listeners, playlists and popular songs alongside streams amount feature when clicking on the artist name, also integrate into the search results so that one can find artists
 - ~~Liked songs playlist support~~

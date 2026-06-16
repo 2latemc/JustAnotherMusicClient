@@ -307,6 +307,11 @@
   opacity: 0.65;
 }
 
+.toggleRow:has(.toggleInput:disabled) {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
 .toggleDescription {
   min-width: 0;
   flex: 1;

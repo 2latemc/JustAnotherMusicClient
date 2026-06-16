@@ -58,6 +58,7 @@ export interface Artist {
 
 export interface ArtistPage {
   artist: Artist;
+  subscribed?: boolean;
   popularSongs: Track[];
   allSongs: Track[];
   releases: Album[];

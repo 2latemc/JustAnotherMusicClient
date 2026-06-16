@@ -1,6 +1,7 @@
 import type { DataSource } from "../datasource/DataSource";
 import type {
   Album,
+  Artist,
   ArtistPage,
   AuthPrompt,
   LibrarySnapshot,
@@ -157,6 +158,19 @@ export class LibraryController {
       throw new Error("Artist pages are unavailable.");
     }
     return this.dataSource.getArtist(artistId, onUpdate);
+  }
+
+  async setArtistSubscribed(artist: Artist, subscribed: boolean): Promise<void> {
+    if (!this.dataSource.setArtistSubscribed) {
+      throw new Error("Subscribing to artists is unavailable.");
+    }
+    if (this.state.status === "signed-out" || !this.state.library) {
+      throw new Error("Sign in to YouTube Music to update subscriptions.");
+    }
+    if (!artist.id.startsWith("UC")) {
+      throw new Error("This artist does not have a subscribable channel.");
+    }
+    return this.dataSource.setArtistSubscribed(artist.id, subscribed);
   }
 
   isAlbumSaved(albumId: string): boolean {

@@ -7,6 +7,10 @@ import { logInternalError, logInternalInfo, logInternalWarn } from "../../intern
 import { MusicTabs } from "./MusicTabs";
 import type { Tab } from "../types/tab";
 import { isLinux } from "../platform";
+import {
+  useNativeWindowControls,
+  useWindowsStyleWindowControls,
+} from "../settings/windowControls";
 
 interface TitleBarProps {
   tabs: Tab[];
@@ -36,6 +40,8 @@ export function TitleBar({
   onboardingFirstTabId,
 }: TitleBarProps) {
   const appWindow = getCurrentWindow();
+  const nativeWindowControls = useNativeWindowControls();
+  const windowsStyleWindowControls = useWindowsStyleWindowControls();
   const homePointerRef = useRef<{
     pointerId: number;
     startX: number;
@@ -50,6 +56,32 @@ export function TitleBar({
     isLinux ? styles.homeButtonLinux : "",
     hideHomeText ? styles.homeButtonIconOnly : "",
   ].filter(Boolean).join(" "), [isHomeActive, isLinux, hideHomeText]);
+
+  const windowControlsClasses = [
+    styles.windowControls,
+    windowsStyleWindowControls ? styles.windowControlsWindows : "",
+  ].filter(Boolean).join(" ");
+
+  const handleMinimize = async () => {
+    try {
+      if (await appWindow.isFullscreen()) {
+        await appWindow.setFullscreen(false);
+        await new Promise((resolve) => window.setTimeout(resolve, 250));
+      }
+
+      await appWindow.minimize();
+    } catch (error) {
+      logInternalError("TitleBar.minimize failed", error);
+    }
+  };
+
+  const handleToggleFullscreen = async () => {
+    try {
+      await appWindow.setFullscreen(!(await appWindow.isFullscreen()));
+    } catch (error) {
+      logInternalError("TitleBar.fullscreen failed", error);
+    }
+  };
 
   return (
     <div className={styles.root}>
@@ -117,39 +149,51 @@ export function TitleBar({
 
       <div className={styles.dragArea} data-tauri-drag-region aria-label="Drag window" />
 
-      <div className={styles.windowControls} aria-label="Window controls">
-        <button
-          type="button"
-          aria-label="Minimize"
-          className={`${styles.windowButton} ${styles.windowButtonMinimize}`}
-          onClick={() => appWindow.minimize()}
-        >
-          <span aria-hidden="true" className={styles.windowIcon}>
-            &#8211;
-          </span>
-        </button>
-        <button
-          type="button"
-          aria-label="Close"
-          className={`${styles.windowButton} ${styles.windowButtonClose}`}
-          onClick={() => {
-            logInternalInfo("TitleBar.close clicked");
-            void invoke("quit_app")
-              .then(() => {
-                logInternalInfo("TitleBar.close quit_app invoked");
-              })
-              .catch((error) => {
-                logInternalError("TitleBar.close quit_app failed", error);
-                logInternalWarn("TitleBar.close fallback to appWindow.close");
-                void appWindow.close();
-              });
-          }}
-        >
-          <span aria-hidden="true" className={styles.windowIcon}>
-            &#10005;
-          </span>
-        </button>
-      </div>
+      {!nativeWindowControls && (
+        <div className={windowControlsClasses} aria-label="Window controls">
+          <button
+            type="button"
+            aria-label="Minimize"
+            className={`${styles.windowButton} ${styles.windowButtonMinimize}`}
+            onClick={() => void handleMinimize()}
+          >
+            <span aria-hidden="true" className={styles.windowIcon}>
+              &#8211;
+            </span>
+          </button>
+          <button
+            type="button"
+            aria-label="Fullscreen"
+            className={`${styles.windowButton} ${styles.windowButtonMaximize}`}
+            onClick={() => void handleToggleFullscreen()}
+          >
+            <span aria-hidden="true" className={styles.windowIcon}>
+              □
+            </span>
+          </button>
+          <button
+            type="button"
+            aria-label="Close"
+            className={`${styles.windowButton} ${styles.windowButtonClose}`}
+            onClick={() => {
+              logInternalInfo("TitleBar.close clicked");
+              void invoke("quit_app")
+                .then(() => {
+                  logInternalInfo("TitleBar.close quit_app invoked");
+                })
+                .catch((error) => {
+                  logInternalError("TitleBar.close quit_app failed", error);
+                  logInternalWarn("TitleBar.close fallback to appWindow.close");
+                  void appWindow.close();
+                });
+            }}
+          >
+            <span aria-hidden="true" className={styles.windowIcon}>
+              &#10005;
+            </span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

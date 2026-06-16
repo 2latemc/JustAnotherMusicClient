@@ -7,7 +7,8 @@ on:
         description: Existing GitHub Release tag, for example v1.2.4
         required: true
         type: string
-
+  release:
+    types: [published]
 permissions:
   contents: write
 

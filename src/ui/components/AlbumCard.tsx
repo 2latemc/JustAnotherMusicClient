@@ -1,5 +1,6 @@
-import { type MouseEvent, type ReactNode, useEffect, useState } from "react";
+import { type MouseEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import { IconMusic, IconPlayerPlay } from "@tabler/icons-react";
+import { getArtworkUrlCandidates } from "../../datasource/youtube/artwork";
 import styles from "./AlbumCard.module.css";
 
 interface AlbumCardProps {
@@ -21,10 +22,15 @@ export function AlbumCard({
   onClick,
   onContextMenu,
 }: AlbumCardProps) {
-  const [artworkFailed, setArtworkFailed] = useState(false);
+  const artworkCandidates = useMemo(
+    () => getArtworkUrlCandidates(artworkUrl),
+    [artworkUrl],
+  );
+  const [artworkIndex, setArtworkIndex] = useState(0);
+  const currentArtworkUrl = artworkCandidates[artworkIndex];
 
   useEffect(() => {
-    setArtworkFailed(false);
+    setArtworkIndex(0);
   }, [artworkUrl]);
 
   return (
@@ -39,13 +45,13 @@ export function AlbumCard({
       tabIndex={0}
     >
       <div className={styles.cover} style={{ backgroundColor: color }}>
-        {artworkUrl && !artworkFailed ? (
+        {currentArtworkUrl ? (
           <img
             className={styles.artwork}
-            src={artworkUrl}
+            src={currentArtworkUrl}
             alt=""
             loading="lazy"
-            onError={() => setArtworkFailed(true)}
+            onError={() => setArtworkIndex((index) => index + 1)}
           />
         ) : (
           <IconMusic className={styles.artworkFallback} size={48} aria-hidden="true" />

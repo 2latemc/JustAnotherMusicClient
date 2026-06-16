@@ -10,6 +10,7 @@ import {
   getRecentPlaylistTimestamp,
   subscribeToRecentPlaylists,
 } from "../../player/recentPlaylists";
+import { getArtworkUrlCandidates } from "../../datasource/youtube/artwork";
 import styles from "./Sidebar.module.css";
 import { ArtistLinks } from "./ArtistLinks";
  
@@ -72,10 +73,15 @@ const TEXT_HIDE_THRESHOLD = 120;
 
 type LibraryView = "albums" | "playlists";
 function SidebarAlbumArtwork({ album }: { album: Album }) {
-  const [failed, setFailed] = useState(false);
+  const artworkCandidates = useMemo(
+    () => getArtworkUrlCandidates(album.artworkUrl),
+    [album.artworkUrl],
+  );
+  const [artworkIndex, setArtworkIndex] = useState(0);
+  const currentArtworkUrl = artworkCandidates[artworkIndex];
 
   useEffect(() => {
-    setFailed(false);
+    setArtworkIndex(0);
   }, [album.artworkUrl]);
 
   if (album.id === "LM") {
@@ -86,7 +92,7 @@ function SidebarAlbumArtwork({ album }: { album: Album }) {
     );
   }
 
-  if (!album.artworkUrl || failed) {
+  if (!currentArtworkUrl) {
     return (
       <div className={`${styles.albumPreview} ${styles.albumPreviewFallback}`}>
         <IconDisc size={24} aria-hidden="true" />
@@ -97,20 +103,25 @@ function SidebarAlbumArtwork({ album }: { album: Album }) {
   return (
     <img
       className={styles.albumPreview}
-      src={album.artworkUrl}
+      src={currentArtworkUrl}
       alt=""
       loading="lazy"
-      onError={() => setFailed(true)}
+      onError={() => setArtworkIndex((index) => index + 1)}
     />
   );
 }
 
 
 function SidebarPlaylistArtwork({ playlist }: { playlist: Playlist }) {
-  const [failed, setFailed] = useState(false);
+  const artworkCandidates = useMemo(
+    () => getArtworkUrlCandidates(playlist.artworkUrl),
+    [playlist.artworkUrl],
+  );
+  const [artworkIndex, setArtworkIndex] = useState(0);
+  const currentArtworkUrl = artworkCandidates[artworkIndex];
 
   useEffect(() => {
-    setFailed(false);
+    setArtworkIndex(0);
   }, [playlist.artworkUrl]);
 
   if (playlist.kind === "liked-songs" || playlist.id === "LM") {
@@ -121,7 +132,7 @@ function SidebarPlaylistArtwork({ playlist }: { playlist: Playlist }) {
     );
   }
 
-  if (!playlist.artworkUrl || failed) {
+  if (!currentArtworkUrl) {
     return (
       <div className={`${styles.albumPreview} ${styles.albumPreviewFallback}`}>
         <IconPlaylist size={24} aria-hidden="true" />
@@ -132,10 +143,10 @@ function SidebarPlaylistArtwork({ playlist }: { playlist: Playlist }) {
   return (
     <img
       className={styles.albumPreview}
-      src={playlist.artworkUrl}
+      src={currentArtworkUrl}
       alt=""
       loading="lazy"
-      onError={() => setFailed(true)}
+      onError={() => setArtworkIndex((index) => index + 1)}
     />
   );
 }

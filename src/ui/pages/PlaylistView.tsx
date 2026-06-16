@@ -1,6 +1,7 @@
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { IconArrowsShuffle, IconHeart, IconPlayerPlay, IconPlaylist } from "@tabler/icons-react";
 import type { Playlist, Track } from "../../datasource/types";
+import { getArtworkUrlCandidates } from "../../datasource/youtube/artwork";
 import type { LibraryController } from "../../player/LibraryController";
 import type { PlayerControllerActions } from "../../player/playerStore";
 import { markPlaylistPlayed } from "../../player/recentPlaylists";
@@ -24,11 +25,16 @@ export function PlaylistView({ playlist, playerController, libraryController }: 
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [artworkFailed, setArtworkFailed] = useState(false);
+  const artworkCandidates = useMemo(
+    () => getArtworkUrlCandidates(playlist?.artworkUrl),
+    [playlist?.artworkUrl],
+  );
+  const [artworkIndex, setArtworkIndex] = useState(0);
+  const currentArtworkUrl = artworkCandidates[artworkIndex];
   const [artworkLoaded, setArtworkLoaded] = useState(false);
 
   useLayoutEffect(() => {
-    setArtworkFailed(false);
+    setArtworkIndex(0);
     setArtworkLoaded(false);
   }, [playlist?.id, playlist?.artworkUrl]);
 
@@ -105,16 +111,19 @@ export function PlaylistView({ playlist, playerController, libraryController }: 
             <IconHeart size={80} stroke={1.6} aria-hidden="true" />
           ) : (
             <>
-              {(!playlist.artworkUrl || artworkFailed) && (
+              {!currentArtworkUrl && (
               <IconPlaylist size={80} aria-hidden="true" />
               )}
-              {playlist.artworkUrl && !artworkFailed && (
+              {currentArtworkUrl && (
                 <img
                   className={`${styles.coverImage} ${artworkLoaded ? styles.coverImageLoaded : ""}`}
-                  src={playlist.artworkUrl}
+                  src={currentArtworkUrl}
                   alt=""
                   onLoad={() => setArtworkLoaded(true)}
-                  onError={() => setArtworkFailed(true)}
+                  onError={() => {
+                    setArtworkLoaded(false);
+                    setArtworkIndex((index) => index + 1);
+                  }}
                 />
               )}
             </>

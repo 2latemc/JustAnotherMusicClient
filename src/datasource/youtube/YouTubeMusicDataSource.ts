@@ -15,7 +15,7 @@ import type {
   SearchResults,
   Track,
 } from "../types";
-import { getVideoArtworkFallback, selectArtworkUrl } from "./artwork";
+import { collectArtworkCandidates, getVideoArtworkFallback, selectArtworkUrl } from "./artwork";
 import { tauriFetch } from "./tauriFetch";
 
 type ClientLabel = "music" | "web";
@@ -105,14 +105,71 @@ type RawLikeEndpoint = {
   removeLikeParams?: string;
 };
 
+type CallableEndpoint = {
+  call(actions: Innertube["actions"], args?: Record<string, unknown>): Promise<{
+    success?: boolean;
+    status_code?: number;
+  }>;
+  payload?: unknown;
+};
+
+type LibraryToggleEndpoint = {
+  isToggled?: boolean;
+  endpoint?: CallableEndpoint;
+  toggledEndpoint?: CallableEndpoint;
+  iconType?: string;
+  tooltip?: string;
+  toggledTooltip?: string;
+};
+
+type RawServiceEndpoint = {
+  commandExecutorCommand?: {
+    commands?: RawServiceEndpoint[];
+  };
+  feedbackEndpoint?: {
+    feedbackToken?: string;
+    cpn?: string;
+    isFeedbackTokenUnencrypted?: boolean;
+    shouldMerge?: boolean;
+  };
+  likeEndpoint?: RawLikeEndpoint;
+};
+
+type RawToggleButtonRenderer = {
+  isToggled?: boolean;
+  defaultIcon?: { iconType?: string };
+  defaultTooltip?: string;
+  toggledTooltip?: string;
+  defaultServiceEndpoint?: RawServiceEndpoint;
+  toggledServiceEndpoint?: RawServiceEndpoint;
+};
+
+type AccountCandidate = {
+  accountIndex: number;
+  name?: string;
+  onBehalfOfUser?: string;
+  serializedDelegationContext?: string;
+  selected?: boolean;
+};
+
+type LibraryResponses = {
+  client: Innertube;
+  account: AccountCandidate;
+  libraryLanding: unknown;
+  historyResponse: unknown;
+};
+
 const LIKED_SONGS_PLAYLIST_ID = "LM";
-const LIBRARY_CACHE_KEY = "youtube-music:library:v4";
+const LIBRARY_CACHE_KEY = "youtube-music:library:v5";
 
 export class YouTubeMusicDataSource extends DataSource {
   private musicClientPromise: Promise<Innertube> | null = null;
   private webClientPromise: Promise<Innertube> | null = null;
   private musicCookie: string | null = null;
   private musicAccountIndex = 0;
+  private musicOnBehalfOfUser: string | null = null;
+  private musicSerializedDelegationContext: string | null = null;
+  private musicAccountName = "YouTube Music";
   private libraryRefreshPromise: Promise<LibrarySnapshot> | null = null;
   private readonly albumRefreshPromises = new Map<string, Promise<Track[]>>();
   private readonly playlistRefreshPromises = new Map<string, Promise<Track[]>>();
@@ -146,6 +203,7 @@ export class YouTubeMusicDataSource extends DataSource {
       user_agent: typeof navigator !== "undefined" ? navigator.userAgent : undefined,
       cookie: this.musicCookie ?? (typeof document !== "undefined" ? document.cookie : undefined),
       account_index: this.musicAccountIndex,
+      on_behalf_of_user: this.musicOnBehalfOfUser ?? undefined,
       retrieve_player: true,
       generate_session_locally: true,
     } as const;
@@ -160,6 +218,7 @@ export class YouTubeMusicDataSource extends DataSource {
         })
         .then(async (client) => {
           await this.refreshMusicClientMetadata(client);
+          this.applyDelegationContext(client);
           return client;
         });
     }
@@ -221,12 +280,29 @@ export class YouTubeMusicDataSource extends DataSource {
     }
   }
 
+  private applyDelegationContext(client: Innertube): void {
+    if (!this.musicSerializedDelegationContext) return;
+    const session = client.session as {
+      context: {
+        user: {
+          serializedDelegationContext?: string;
+        };
+      };
+    };
+    session.context.user.serializedDelegationContext = this.musicSerializedDelegationContext;
+  }
+
+  private resetMusicSessionSelection(): void {
+    this.musicAccountIndex = 0;
+    this.musicOnBehalfOfUser = null;
+    this.musicSerializedDelegationContext = null;
+    this.musicAccountName = "YouTube Music";
+    this.musicClientPromise = null;
+    this.webClientPromise = null;
+  }
+
   private getArtwork(item: MusicItem): string | undefined {
-    const thumbnail = item.thumbnail;
-    return selectArtworkUrl(
-      Array.isArray(thumbnail) ? thumbnail : thumbnail?.contents,
-      item.thumbnails,
-    );
+    return selectArtworkUrl(collectArtworkCandidates(item.thumbnail, item.thumbnails));
   }
 
   private getArtistName(item: MusicItem): string {
@@ -243,6 +319,22 @@ export class YouTubeMusicDataSource extends DataSource {
   }
 
   private getArtists(item: MusicItem): ArtistReference[] | undefined {
+    const toArtistReference = (value: unknown) => {
+      const candidate = value as {
+        name?: string;
+        text?: string;
+        channel_id?: string;
+        endpoint?: unknown;
+        navigationEndpoint?: unknown;
+      };
+      return {
+        id: candidate.channel_id
+          ?? this.findBrowseId(candidate.endpoint)
+          ?? this.findBrowseId(candidate.navigationEndpoint)
+          ?? "",
+        name: candidate.name ?? candidate.text ?? "",
+      };
+    };
     const candidates = item.artists?.length
       ? item.artists
       : item.authors?.length
@@ -251,22 +343,84 @@ export class YouTubeMusicDataSource extends DataSource {
           ? [item.author]
           : [];
     const artists = candidates
-      .map((artist) => ({
-        id: artist.channel_id ?? artist.endpoint?.payload?.browseId ?? "",
-        name: artist.name ?? "",
-      }))
+      .map(toArtistReference)
       .filter((artist) => artist.id.startsWith("UC") && artist.name);
 
     if (artists.length > 0) return artists;
 
     const runs = item.subtitle?.runs ?? [];
     const fromRuns = runs
-      .map((run) => ({
-        id: run.endpoint?.payload?.browseId ?? "",
-        name: run.text ?? "",
-      }))
+      .map(toArtistReference)
       .filter((artist) => artist.id.startsWith("UC") && artist.name);
     return fromRuns.length > 0 ? fromRuns : undefined;
+  }
+
+  private findBrowseId(root: unknown): string | undefined {
+    const seen = new WeakSet<object>();
+
+    const visit = (value: unknown): string | undefined => {
+      if (!value || typeof value !== "object") return undefined;
+      if (seen.has(value)) return undefined;
+      seen.add(value);
+
+      const candidate = value as {
+        browseId?: unknown;
+        payload?: unknown;
+      };
+      if (typeof candidate.browseId === "string") return candidate.browseId;
+      const payloadBrowseId = visit(candidate.payload);
+      if (payloadBrowseId) return payloadBrowseId;
+
+      for (const child of Object.values(value)) {
+        const result = visit(child);
+        if (result) return result;
+      }
+      return undefined;
+    };
+
+    return visit(root);
+  }
+
+  private findStringByKey(root: unknown, keys: Set<string>): string | undefined {
+    const seen = new WeakSet<object>();
+
+    const visit = (value: unknown): string | undefined => {
+      if (!value || typeof value !== "object") return undefined;
+      if (seen.has(value)) return undefined;
+      seen.add(value);
+
+      for (const [key, child] of Object.entries(value)) {
+        if (keys.has(key) && typeof child === "string" && child.length > 0) {
+          return child;
+        }
+        const result = visit(child);
+        if (result) return result;
+      }
+      return undefined;
+    };
+
+    return visit(root);
+  }
+
+  private findYoutubeChannelId(root: unknown): string | undefined {
+    const seen = new WeakSet<object>();
+
+    const visit = (value: unknown): string | undefined => {
+      if (!value || typeof value !== "object") return undefined;
+      if (seen.has(value)) return undefined;
+      seen.add(value);
+
+      for (const child of Object.values(value)) {
+        if (typeof child === "string" && /^UC[\w-]{20,}$/.test(child)) {
+          return child;
+        }
+        const result = visit(child);
+        if (result) return result;
+      }
+      return undefined;
+    };
+
+    return visit(root);
   }
 
   private parseViewCount(value?: string): number | undefined {
@@ -338,7 +492,7 @@ export class YouTubeMusicDataSource extends DataSource {
   }
 
   private toAlbum(item: MusicItem): Album | null {
-    const id = item.id ?? item.endpoint?.payload?.browseId;
+    const id = item.id ?? this.findBrowseId(item.endpoint);
     const title = this.getTitle(item);
     if (!id || !title) return null;
 
@@ -352,7 +506,7 @@ export class YouTubeMusicDataSource extends DataSource {
   }
 
   private toPlaylist(item: MusicItem): Playlist | null {
-    const id = item.id ?? item.endpoint?.payload?.browseId;
+    const id = item.id ?? this.findBrowseId(item.endpoint);
     const title = this.getTitle(item);
     if (!id || !title) return null;
 
@@ -386,7 +540,7 @@ export class YouTubeMusicDataSource extends DataSource {
   }
 
   private toArtist(item: MusicItem): Artist | null {
-    const id = item.id ?? item.endpoint?.payload?.browseId;
+    const id = item.id ?? this.findBrowseId(item.endpoint);
     const name = this.getTitle(item) ?? item.author?.name ?? item.artists?.[0]?.name;
     if (!id?.startsWith("UC") || !name) return null;
     return {
@@ -454,6 +608,171 @@ export class YouTubeMusicDataSource extends DataSource {
 
     visit(root);
     return match;
+  }
+
+  private findLibraryToggleEndpoint(root: unknown): LibraryToggleEndpoint | null {
+    const seen = new WeakSet<object>();
+    let fallback: LibraryToggleEndpoint | null = null;
+    let match: LibraryToggleEndpoint | null = null;
+
+    const visit = (value: unknown) => {
+      if (!value || typeof value !== "object" || match || seen.has(value)) return;
+      seen.add(value);
+
+      const candidate = value as {
+        type?: string;
+        is_toggled?: boolean;
+        endpoint?: CallableEndpoint;
+        toggled_endpoint?: CallableEndpoint;
+        icon_type?: string;
+        tooltip?: string;
+        toggled_tooltip?: string;
+      };
+      if (
+        candidate.type === "ToggleButton"
+        && candidate.endpoint
+        && candidate.toggled_endpoint
+        && candidate.icon_type !== "LIKE"
+        && candidate.icon_type !== "DISLIKE"
+      ) {
+        const toggle = {
+          isToggled: candidate.is_toggled,
+          endpoint: candidate.endpoint,
+          toggledEndpoint: candidate.toggled_endpoint,
+          iconType: candidate.icon_type,
+          tooltip: candidate.tooltip,
+          toggledTooltip: candidate.toggled_tooltip,
+        };
+        const text = `${candidate.tooltip ?? ""} ${candidate.toggled_tooltip ?? ""}`.toLocaleLowerCase();
+        if (text.includes("library") || text.includes("save")) {
+          match = toggle;
+          return;
+        }
+        fallback ??= toggle;
+      }
+
+      for (const child of Object.values(value)) visit(child);
+    };
+
+    visit(root);
+    return match ?? fallback;
+  }
+
+  private findRawLibraryToggle(root: unknown): RawToggleButtonRenderer | null {
+    const seen = new WeakSet<object>();
+    let fallback: RawToggleButtonRenderer | null = null;
+    let match: RawToggleButtonRenderer | null = null;
+
+    const visit = (value: unknown) => {
+      if (!value || typeof value !== "object" || match || seen.has(value)) return;
+      seen.add(value);
+
+      const candidate = value as { toggleButtonRenderer?: RawToggleButtonRenderer };
+      const toggle = candidate.toggleButtonRenderer;
+      if (toggle) {
+        const iconType = toggle.defaultIcon?.iconType;
+        if (iconType !== "LIKE" && iconType !== "DISLIKE") {
+          const hasDefaultEndpoint = Boolean(toggle.defaultServiceEndpoint);
+          const hasToggledEndpoint = Boolean(toggle.toggledServiceEndpoint);
+          const hasEndpoints = hasDefaultEndpoint || hasToggledEndpoint;
+
+          if (hasEndpoints) {
+            const text = `${toggle.defaultTooltip ?? ""} ${toggle.toggledTooltip ?? ""}`.toLocaleLowerCase();
+            if (text.includes("library") || text.includes("save")) {
+              match = toggle;
+              return;
+            }
+            fallback ??= toggle;
+          }
+        }
+      }
+
+      for (const child of Object.values(value)) visit(child);
+    };
+
+    visit(root);
+    const result: RawToggleButtonRenderer | null = match ?? fallback;
+    if (result) {
+      logInternalInfo("YouTubeMusicDataSource.findRawLibraryToggle found toggle", {
+        source: match ? "tooltip" : "fallback",
+        iconType: result.defaultIcon?.iconType,
+        defaultTooltip: result.defaultTooltip,
+        toggledTooltip: result.toggledTooltip,
+      });
+    } else {
+      logInternalWarn("YouTubeMusicDataSource.findRawLibraryToggle no toggle found");
+    }
+    return result;
+  }
+
+  private findArtistSubscriptionToggle(root: unknown): { subscribed: boolean } | null {
+    const seen = new WeakSet<object>();
+
+    const visit = (value: unknown): { subscribed: boolean } | null => {
+      if (!value || typeof value !== "object") return null;
+      if (seen.has(value)) return null;
+      seen.add(value);
+
+      const candidate = value as {
+        subscribeButtonRenderer?: {
+          subscribed?: boolean;
+          channelId?: string;
+          notificationPreferenceButton?: unknown;
+          targetId?: string;
+        };
+      };
+      const renderer = candidate.subscribeButtonRenderer;
+      if (renderer) {
+        return { subscribed: Boolean(renderer.subscribed) };
+      }
+
+      for (const child of Object.values(value)) {
+        const result = visit(child);
+        if (result) return result;
+      }
+      return null;
+    };
+
+    return visit(root);
+  }
+
+  private getActionableServiceEndpoint(endpoint: RawServiceEndpoint): RawServiceEndpoint {
+    const commands = endpoint.commandExecutorCommand?.commands;
+    if (!commands?.length) return endpoint;
+    return commands.find((command) => command.feedbackEndpoint || command.likeEndpoint)
+      ?? commands[commands.length - 1]
+      ?? endpoint;
+  }
+
+  private async executeRawServiceEndpoint(
+    client: Innertube,
+    endpoint: RawServiceEndpoint,
+  ): Promise<{ success?: boolean; status_code?: number }> {
+    const command = this.getActionableServiceEndpoint(endpoint);
+    if (command.feedbackEndpoint?.feedbackToken) {
+      const feedback = command.feedbackEndpoint;
+      return client.actions.execute("/feedback", {
+        feedbackTokens: [feedback.feedbackToken],
+        ...(feedback.cpn ? { feedbackContext: { cpn: feedback.cpn } } : {}),
+        isFeedbackTokenUnencrypted: Boolean(feedback.isFeedbackTokenUnencrypted),
+        shouldMerge: Boolean(feedback.shouldMerge),
+      });
+    }
+    if (command.likeEndpoint) {
+      const like = command.likeEndpoint;
+      const params = like.status === "LIKE"
+        ? like.likeParams ?? like.params
+        : like.removeLikeParams ?? like.params;
+      return client.actions.execute(
+        like.status === "LIKE" ? "/like/like" : "/like/removelike",
+        {
+          client: "YTMUSIC",
+          target: like.target,
+          ...(params ? { params } : {}),
+        },
+      );
+    }
+    throw new Error("YouTube Music returned an unsupported album library command.");
   }
 
   private async executeTrackLikeCommand(
@@ -717,7 +1036,14 @@ export class YouTubeMusicDataSource extends DataSource {
     const playlists = this.uniqueById(
       playlistItems
         .map((item) => this.toPlaylist(item))
-        .filter((item): item is Playlist => Boolean(item)),
+        .filter((item): item is Playlist => Boolean(item))
+        .filter((item) => {
+          const normalizedId = item.id.replace(/^VL/, "").toUpperCase();
+          if (normalizedId === "LM") return false;
+          const lowerTitle = item.title.toLocaleLowerCase();
+          if (lowerTitle === "liked songs" || lowerTitle === "likes" || lowerTitle.includes("new releases") || lowerTitle.includes("new episodes")) return false;
+          return true;
+        }),
     );
     const createdPlaylistIds = new Set<string>();
     const queue = [...playlists];
@@ -834,6 +1160,7 @@ export class YouTubeMusicDataSource extends DataSource {
   private async loadLibraryResponses(client: Innertube) {
     logInternalInfo("YouTubeMusicDataSource.loadLibraryResponses start", {
       accountIndex: this.musicAccountIndex,
+      onBehalfOfUser: this.musicOnBehalfOfUser,
     });
     const [libraryLanding, historyResponse] = await Promise.all([
       this.executeMusicBrowse(client, { browseId: "FEmusic_library_landing" }),
@@ -841,12 +1168,183 @@ export class YouTubeMusicDataSource extends DataSource {
     ]);
     logInternalInfo("YouTubeMusicDataSource.loadLibraryResponses complete", {
       accountIndex: this.musicAccountIndex,
+      onBehalfOfUser: this.musicOnBehalfOfUser,
       libraryRenderers: this.getRendererCounts(libraryLanding),
       historyRenderers: this.getRendererCounts(historyResponse),
       libraryMessages: this.getResponseMessages(libraryLanding),
       historyMessages: this.getResponseMessages(historyResponse),
     });
     return { libraryLanding, historyResponse };
+  }
+
+  private getLibrarySignal(libraryLanding: unknown, historyResponse: unknown): number {
+    const albumCount = this.collectMusicItems(libraryLanding, new Set(["album"])).length;
+    const playlistCount = this.collectMusicItems(libraryLanding, new Set(["playlist"])).length;
+    const recentCount = this.collectMusicItems(historyResponse, new Set(["song", "video"])).length;
+    const messages = this.getResponseMessages(libraryLanding).length
+      + this.getResponseMessages(historyResponse).length;
+    return albumCount + playlistCount + recentCount - messages * 10;
+  }
+
+  private async getAccountCandidates(client: Innertube): Promise<AccountCandidate[]> {
+    const fallback: AccountCandidate = { accountIndex: 0, name: "YouTube Music", selected: true };
+    try {
+      const accountItems = await client.account.getInfo(true) as Array<{
+        account_name?: { toString(): string };
+        account_byline?: { toString(): string };
+        channel_handle?: { toString(): string };
+        endpoint?: unknown;
+        has_channel?: boolean;
+        is_disabled?: boolean;
+        is_selected?: boolean;
+      }>;
+      const candidates = accountItems
+        .filter((item) => !item.is_disabled)
+        .flatMap((item, index): AccountCandidate[] => {
+          const endpoint = item.endpoint;
+          const onBehalfOfUser = this.findBrowseId(endpoint)
+            ?? this.findYoutubeChannelId(endpoint);
+          const serializedDelegationContext = this.findStringByKey(
+            endpoint,
+            new Set(["selectedSerializedDelegationContext", "serializedDelegationContext"]),
+          );
+          const name = item.account_name?.toString()
+            || item.channel_handle?.toString()
+            || item.account_byline?.toString()
+            || undefined;
+          if (!onBehalfOfUser && !serializedDelegationContext && index === 0) {
+            return [{ ...fallback, name, selected: item.is_selected }];
+          }
+          if (!onBehalfOfUser && !serializedDelegationContext) return [];
+          return [{
+            accountIndex: 0,
+            name,
+            onBehalfOfUser,
+            serializedDelegationContext,
+            selected: item.is_selected,
+          }];
+        });
+
+      const unique = this.uniqueById(
+        [fallback, ...candidates].map((candidate) => ({
+          ...candidate,
+          id: [
+            candidate.accountIndex,
+            candidate.onBehalfOfUser ?? "",
+            candidate.serializedDelegationContext ?? "",
+          ].join(":"),
+        })),
+      ).map(({ id: _id, ...candidate }) => candidate);
+
+      logInternalInfo("YouTubeMusicDataSource.getAccountCandidates success", {
+        candidateCount: unique.length,
+        selectedCount: unique.filter((candidate) => candidate.selected).length,
+        candidates: unique.map((candidate) => ({
+          accountIndex: candidate.accountIndex,
+          hasOnBehalfOfUser: Boolean(candidate.onBehalfOfUser),
+          hasSerializedDelegationContext: Boolean(candidate.serializedDelegationContext),
+          selected: candidate.selected,
+          name: candidate.name,
+        })),
+      });
+      return unique;
+    } catch (error) {
+      logInternalWarn("YouTubeMusicDataSource.getAccountCandidates failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return [fallback];
+    }
+  }
+
+  private async useAccountCandidate(candidate: AccountCandidate): Promise<Innertube> {
+    const changed = this.musicAccountIndex !== candidate.accountIndex
+      || this.musicOnBehalfOfUser !== (candidate.onBehalfOfUser ?? null)
+      || this.musicSerializedDelegationContext !== (candidate.serializedDelegationContext ?? null);
+    this.musicAccountIndex = candidate.accountIndex;
+    this.musicOnBehalfOfUser = candidate.onBehalfOfUser ?? null;
+    this.musicSerializedDelegationContext = candidate.serializedDelegationContext ?? null;
+    this.musicAccountName = candidate.name ?? "YouTube Music";
+    if (changed) {
+      this.musicClientPromise = null;
+      this.webClientPromise = null;
+    }
+    return this.getMusicClient();
+  }
+
+  private async findBestLibraryResponses(initialClient: Innertube): Promise<LibraryResponses> {
+    const fallback: AccountCandidate = {
+      accountIndex: this.musicAccountIndex,
+      name: this.musicAccountName,
+      onBehalfOfUser: this.musicOnBehalfOfUser ?? undefined,
+      serializedDelegationContext: this.musicSerializedDelegationContext ?? undefined,
+      selected: true,
+    };
+    const initialResponses = await this.loadLibraryResponses(initialClient);
+    let best: LibraryResponses = {
+      client: initialClient,
+      account: fallback,
+      ...initialResponses,
+    };
+    let bestSignal = this.getLibrarySignal(best.libraryLanding, best.historyResponse);
+    const profileCandidates = await this.getAccountCandidates(initialClient);
+    const authUserCandidates: AccountCandidate[] = bestSignal <= 0
+      ? [1, 2, 3, 4, 5].map((accountIndex) => ({
+          accountIndex,
+          name: `YouTube Music account ${accountIndex + 1}`,
+        }))
+      : [];
+    const candidates = this.uniqueById(
+      [...profileCandidates, ...authUserCandidates].map((candidate) => ({
+        ...candidate,
+        id: [
+          candidate.accountIndex,
+          candidate.onBehalfOfUser ?? "",
+          candidate.serializedDelegationContext ?? "",
+        ].join(":"),
+      })),
+    ).map(({ id: _id, ...candidate }) => candidate);
+
+    for (const candidate of candidates) {
+      const key = [
+        candidate.accountIndex,
+        candidate.onBehalfOfUser ?? "",
+        candidate.serializedDelegationContext ?? "",
+      ].join(":");
+      const bestKey = [
+        best.account.accountIndex,
+        best.account.onBehalfOfUser ?? "",
+        best.account.serializedDelegationContext ?? "",
+      ].join(":");
+      if (key === bestKey) continue;
+
+      try {
+        const client = await this.useAccountCandidate(candidate);
+        const { libraryLanding, historyResponse } = await this.loadLibraryResponses(client);
+        const signal = this.getLibrarySignal(libraryLanding, historyResponse);
+        if (signal > bestSignal || (signal === bestSignal && candidate.selected && !best.account.selected)) {
+          best = { client, account: candidate, libraryLanding, historyResponse };
+          bestSignal = signal;
+        }
+      } catch (error) {
+        logInternalWarn("YouTubeMusicDataSource.findBestLibraryResponses candidate failed", {
+          accountIndex: candidate.accountIndex,
+          hasOnBehalfOfUser: Boolean(candidate.onBehalfOfUser),
+          hasSerializedDelegationContext: Boolean(candidate.serializedDelegationContext),
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    await this.useAccountCandidate(best.account);
+    logInternalInfo("YouTubeMusicDataSource.findBestLibraryResponses selected", {
+      accountIndex: best.account.accountIndex,
+      hasOnBehalfOfUser: Boolean(best.account.onBehalfOfUser),
+      hasSerializedDelegationContext: Boolean(best.account.serializedDelegationContext),
+      selected: best.account.selected,
+      signal: bestSignal,
+      name: best.account.name,
+    });
+    return best;
   }
 
   async restoreSession(): Promise<boolean> {
@@ -860,8 +1358,7 @@ export class YouTubeMusicDataSource extends DataSource {
       logInternalInfo("YouTubeMusicDataSource.restoreSession credential loaded", {
         credentialBytes: this.musicCookie.length,
       });
-      this.musicAccountIndex = 0;
-      this.musicClientPromise = null;
+      this.resetMusicSessionSelection();
       await this.getMusicClient();
       logInternalInfo("YouTubeMusicDataSource.restoreSession success");
       return true;
@@ -889,8 +1386,7 @@ export class YouTubeMusicDataSource extends DataSource {
     logInternalInfo("YouTubeMusicDataSource.signIn command completed", {
       credentialBytes: this.musicCookie.length,
     });
-    this.musicAccountIndex = 0;
-    this.musicClientPromise = null;
+    this.resetMusicSessionSelection();
     await this.getMusicClient();
     logInternalInfo("YouTubeMusicDataSource.signIn success");
   }
@@ -907,8 +1403,7 @@ export class YouTubeMusicDataSource extends DataSource {
       });
     }
     this.musicCookie = null;
-    this.musicAccountIndex = 0;
-    this.musicClientPromise = null;
+    this.resetMusicSessionSelection();
     logInternalInfo("YouTubeMusicDataSource.signOut success");
   }
 
@@ -920,7 +1415,7 @@ export class YouTubeMusicDataSource extends DataSource {
     const cacheKey = LIBRARY_CACHE_KEY;
     const cached = await getCachedJson<LibrarySnapshot>(cacheKey);
 
-    if (cached) {
+    if (cached && this.hasLibraryContent(cached)) {
       globalThis.setTimeout(() => {
         void this.refreshLibrary(cacheKey)
           .then(({ changed, value }) => {
@@ -935,7 +1430,18 @@ export class YouTubeMusicDataSource extends DataSource {
       return cached;
     }
 
+    if (cached) {
+      logInternalWarn("YouTubeMusicDataSource.getLibrary ignoring empty cache entry");
+    }
+
     return (await this.refreshLibrary(cacheKey)).value;
+  }
+
+  private hasLibraryContent(library: LibrarySnapshot): boolean {
+    return library.albums.length > 0
+      || library.playlists.length > 0
+      || library.likedSongs.length > 0
+      || library.recentlyPlayed.length > 0;
   }
 
   private async refreshLibrary(cacheKey: string): Promise<{ changed: boolean; value: LibrarySnapshot }> {
@@ -960,21 +1466,10 @@ export class YouTubeMusicDataSource extends DataSource {
     }
 
     let client = await this.getMusicClient();
-    let { libraryLanding, historyResponse } = await this.loadLibraryResponses(client);
-    let libraryMessages = this.getResponseMessages(libraryLanding);
-
-    for (let accountIndex = 1; libraryMessages.length > 0 && accountIndex <= 5; accountIndex += 1) {
-      logInternalInfo("YouTubeMusicDataSource.getLibrary probing account", {
-        previousAccountIndex: this.musicAccountIndex,
-        accountIndex,
-        previousMessages: libraryMessages,
-      });
-      this.musicAccountIndex = accountIndex;
-      this.musicClientPromise = null;
-      client = await this.getMusicClient();
-      ({ libraryLanding, historyResponse } = await this.loadLibraryResponses(client));
-      libraryMessages = this.getResponseMessages(libraryLanding);
-    }
+    const bestLibrary = await this.findBestLibraryResponses(client);
+    client = bestLibrary.client;
+    const { libraryLanding, historyResponse } = bestLibrary;
+    const libraryMessages = this.getResponseMessages(libraryLanding);
 
     const [albumLibrary, playlistLibrary] = await Promise.all([
       this.applyLibraryFilter(client, libraryLanding, "Albums"),
@@ -1011,11 +1506,13 @@ export class YouTubeMusicDataSource extends DataSource {
       libraryMessages,
       historyMessages,
       accountIndex: this.musicAccountIndex,
+      onBehalfOfUser: this.musicOnBehalfOfUser,
+      accountName: this.musicAccountName,
     });
 
     return {
       account: {
-        name: "YouTube Music",
+        name: this.musicAccountName,
       },
       albums,
       playlists,
@@ -1060,14 +1557,55 @@ export class YouTubeMusicDataSource extends DataSource {
     }
     try {
       const client = await this.getMusicClient();
-      const response = await client.actions.execute(
-        saved ? "/like/like" : "/like/removelike",
-        {
-          target: album.id,
-          client: "YTMUSIC",
-        },
-      );
-      if (!response.success) {
+      const albumResponse = await this.executeMusicBrowse(client, { browseId: album.id });
+      const rawToggle = this.findRawLibraryToggle(albumResponse);
+
+      if (rawToggle) {
+        if (rawToggle.isToggled === saved) return;
+        const endpoint = saved
+          ? rawToggle.defaultServiceEndpoint
+          : rawToggle.toggledServiceEndpoint;
+        if (!endpoint) {
+          throw new Error("YouTube Music returned an incomplete library command for this album.");
+        }
+
+        logInternalInfo("YouTubeMusicDataSource.setAlbumSaved raw command", {
+          albumId: album.id,
+          saved,
+          iconType: rawToggle.defaultIcon?.iconType,
+          defaultTooltip: rawToggle.defaultTooltip,
+          toggledTooltip: rawToggle.toggledTooltip,
+        });
+
+        const response = await this.executeRawServiceEndpoint(client, endpoint);
+        if (response.success === false) {
+          throw new Error(`Album library update returned HTTP ${response.status_code}.`);
+        }
+        return;
+      }
+
+      const albumPage = await client.music.getAlbum(album.id);
+      const toggle = this.findLibraryToggleEndpoint(albumPage.page);
+      if (!toggle) {
+        throw new Error("YouTube Music did not return a library command for this album.");
+      }
+      if (toggle.isToggled === saved) return;
+
+      const endpoint = saved ? toggle.endpoint : toggle.toggledEndpoint;
+      if (!endpoint) {
+        throw new Error("YouTube Music returned an incomplete library command for this album.");
+      }
+
+      logInternalInfo("YouTubeMusicDataSource.setAlbumSaved command", {
+        albumId: album.id,
+        saved,
+        iconType: toggle.iconType,
+        tooltip: toggle.tooltip,
+        toggledTooltip: toggle.toggledTooltip,
+      });
+
+      const response = await endpoint.call(client.actions, { client: "YTMUSIC" });
+      if (response.success === false) {
         throw new Error(`Album library update returned HTTP ${response.status_code}.`);
       }
     } catch (error) {
@@ -1124,7 +1662,8 @@ export class YouTubeMusicDataSource extends DataSource {
     artistId: string,
     onUpdate?: (artist: ArtistPage) => void,
   ): Promise<ArtistPage> {
-    const cacheKey = `youtube-music:artist:v2:${artistId}`;
+    // v3 adds the subscribed field to the cached data
+    const cacheKey = `youtube-music:artist:v3:${artistId}`;
     const cached = await getCachedJson<ArtistPage>(cacheKey);
     if (cached) {
       globalThis.setTimeout(() => {
@@ -1142,6 +1681,35 @@ export class YouTubeMusicDataSource extends DataSource {
       return cached;
     }
     return (await this.refreshArtist(artistId, cacheKey)).value;
+  }
+
+  async setArtistSubscribed(artistId: string, subscribed: boolean): Promise<void> {
+    if (!this.musicCookie) {
+      throw new Error("Sign in to YouTube Music to update subscriptions.");
+    }
+    try {
+      const webClient = await this.getWebClient();
+      const response = await webClient.actions.execute(
+        subscribed ? "/subscription/subscribe" : "/subscription/unsubscribe",
+        {
+          channelIds: [artistId],
+          params: "CgIIAhgA",
+        },
+      );
+      if (!response.success) {
+        throw new Error(`Artist subscription update returned HTTP ${response.status_code}.`);
+      }
+    } catch (error) {
+      logInternalError("YouTubeMusicDataSource.setArtistSubscribed failed", error, {
+        artistId,
+        subscribed,
+      });
+      throw new Error(
+        subscribed
+          ? "YouTube Music could not subscribe to this artist."
+          : "YouTube Music could not unsubscribe from this artist.",
+      );
+    }
   }
 
   private async refreshArtist(
@@ -1192,11 +1760,11 @@ export class YouTubeMusicDataSource extends DataSource {
         || artistItem?.title?.toString()
         || "Artist",
       artworkUrl: selectArtworkUrl(
-        headerThumbnail,
-        header?.foreground_thumbnail,
-        artistItem?.thumbnail as
-          | Array<{ url?: string; width?: number; height?: number }>
-          | undefined,
+        collectArtworkCandidates(
+          headerThumbnail,
+          header?.foreground_thumbnail,
+          artistItem?.thumbnail,
+        ),
       ),
       subscriberCount,
     };
@@ -1327,8 +1895,12 @@ export class YouTubeMusicDataSource extends DataSource {
       }),
     );
 
+    const subscriptionToggle = this.findArtistSubscriptionToggle(artistPage.page);
+    const subscribed = subscriptionToggle?.subscribed;
+
     return {
       artist,
+      subscribed,
       popularSongs: enrichedPopularSongs,
       allSongs: this.uniqueById(allSongs),
       releases: this.uniqueById(releases),
@@ -1813,7 +2385,7 @@ export class YouTubeMusicDataSource extends DataSource {
       return { artists: [], tracks: [], albums: [], playlists: [] };
     }
     const cacheId = normalizedQuery.toLocaleLowerCase();
-    const cacheKey = `youtube-music:mixed-search:v2:${cacheId}`;
+    const cacheKey = `youtube-music:mixed-search:v3:${cacheId}`;
     const cached = await getCachedJson<SearchResults>(cacheKey);
     if (cached && this.hasSearchResults(cached)) {
       globalThis.setTimeout(() => {
