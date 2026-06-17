@@ -133,14 +133,6 @@ export function ArtistView({
     toastTimerRef.current = window.setTimeout(() => setToast(null), 3000);
   };
 
-  const showPersistentToast = (message: string) => {
-    setToast(message);
-    if (toastTimerRef.current !== null) {
-      window.clearTimeout(toastTimerRef.current);
-      toastTimerRef.current = null;
-    }
-  };
-
   const playShuffled = () => {
     const shuffled = shuffleTracks(page?.allSongs ?? []);
     if (shuffled[0]) {
@@ -152,11 +144,9 @@ export function ArtistView({
     if (isSubscribing) return;
     const nextSubscribed = !isSubscribed;
     setIsSubscribing(true);
-    showPersistentToast(nextSubscribed ? "Subscribing..." : "Unsubscribing...");
     try {
       await libraryController.setArtistSubscribed(displayedArtist, nextSubscribed);
       setIsSubscribed(nextSubscribed);
-      showToast(nextSubscribed ? "Subscribed" : "Unsubscribed");
     } catch (subscribeError) {
       showToast(
         subscribeError instanceof Error
@@ -230,7 +220,11 @@ export function ArtistView({
             ) : (
               <IconUserPlus size={18} />
             )}
-            <span>{isSubscribed ? "Subscribed" : "Subscribe"}</span>
+            <span>
+              {isSubscribing
+                ? isSubscribed ? "Unsubscribing..." : "Subscribing..."
+                : isSubscribed ? "Subscribed" : "Subscribe"}
+            </span>
           </button>
           <button
             className={styles.shuffleButton}
@@ -362,13 +356,7 @@ export function ArtistView({
       )}
       {toast && createPortal(
         <div className={styles.toast} role="status">
-          {isSubscribing ? (
-            <IconLoader2
-              className={styles.toastLoadingIcon}
-              size={18}
-              aria-hidden="true"
-            />
-          ) : (toast === "Subscribed" || toast === "Unsubscribed" || toast === "Url copied to clipboard") && (
+          {toast === "Url copied to clipboard" && (
             <IconCheck size={18} aria-hidden="true" />
           )}
           <span>{toast}</span>

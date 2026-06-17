@@ -124,7 +124,6 @@
 }
 
 .signOutButton,
-.signInButton,
 .secondaryButton,
 .dangerButton {
   min-height: 40px;
@@ -143,12 +142,43 @@
   transition: border-color var(--transition-fast), background var(--transition-fast);
 }
 
+.signInButton {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  padding: 0 var(--spacing-md);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  background: var(--color-accent);
+  color: white;
+  font: inherit;
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast),
+    color var(--transition-fast),
+    transform var(--transition-fast);
+}
+
 .signOutButton:hover,
-.signInButton:hover,
 .secondaryButton:hover,
 .dangerButton:hover {
   border-color: var(--color-accent);
   background: var(--color-bg-overlay);
+}
+
+.signInButton:hover {
+  border-color: var(--color-accent);
+  background: var(--color-bg-overlay);
+  color: var(--color-accent);
+  transform: translateY(-1px);
+}
+
+.signInButton:active {
+  transform: translateY(0);
 }
 
 .signInButton:disabled {

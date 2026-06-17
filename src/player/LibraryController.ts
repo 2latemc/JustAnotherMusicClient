@@ -174,7 +174,9 @@ export class LibraryController {
   }
 
   isAlbumSaved(albumId: string): boolean {
-    return this.state.library?.albums.some((album) => album.id === albumId) ?? false;
+    return this.state.library?.albums.some((album) =>
+      album.id === albumId || album.playlistId === albumId
+    ) ?? false;
   }
 
   async setAlbumSaved(album: Album, saved: boolean): Promise<void> {
@@ -186,9 +188,14 @@ export class LibraryController {
     }
 
     const previousLibrary = this.state.library;
+    const sameAlbum = (item: Album) =>
+      item.id === album.id
+      || Boolean(album.playlistId && item.playlistId === album.playlistId)
+      || Boolean(album.playlistId && item.id === album.playlistId)
+      || Boolean(item.playlistId && item.playlistId === album.id);
     const albums = saved
-      ? [album, ...previousLibrary.albums.filter((item) => item.id !== album.id)]
-      : previousLibrary.albums.filter((item) => item.id !== album.id);
+      ? [album, ...previousLibrary.albums.filter((item) => !sameAlbum(item))]
+      : previousLibrary.albums.filter((item) => !sameAlbum(item));
     this.setState({ library: { ...previousLibrary, albums } });
 
     try {

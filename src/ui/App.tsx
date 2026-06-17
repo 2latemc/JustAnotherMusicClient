@@ -16,7 +16,7 @@ import { TitleBar } from "./components/TitleBar";
 import { PlayerBar } from "./components/player/PlayerBar";
 import { QueuePanel } from "./components/player/QueuePanel";
 import { Layout } from "./components/Layout";
-import { Tab } from "./types/tab";
+import type { Tab, TabViewState } from "./types/tab";
 import { hasPrimaryModifierOnly } from "./platform";
 import {
   libraryController,
@@ -51,6 +51,60 @@ const LOADING_SCREEN_FADE_MS = 80;
 const ONBOARDING_COMPLETE_KEY = "yt-music-dock:onboarding-complete";
 const KEYCHAIN_NOTICE_COMPLETE_KEY = "yt-music-dock:keychain-notice-complete";
 const LOADING_SCREEN_MIN_MS = 1000;
+const MOUSE_BACK_BUTTON = 3;
+const MOUSE_FORWARD_BUTTON = 4;
+
+function getNavigationState(tab: Tab): TabViewState | null {
+  if (tab.view === "settings") return null;
+
+  return {
+    title: tab.title,
+    view: tab.view,
+    album: tab.album,
+    artist: tab.artist,
+    playlist: tab.playlist,
+    searchQuery: tab.searchQuery,
+    searchResults: tab.searchResults,
+    mixedSearchResults: tab.mixedSearchResults,
+    searchLoading: tab.searchLoading,
+  };
+}
+
+function getNavigationKey(state: TabViewState): string {
+  switch (state.view) {
+    case "album":
+      return `album:${state.album?.id ?? ""}`;
+    case "artist":
+      return `artist:${state.artist?.id ?? state.artist?.name ?? ""}`;
+    case "playlist":
+      return `playlist:${state.playlist?.id ?? ""}`;
+    case "search":
+      return `search:${state.searchQuery ?? ""}`;
+    case "home":
+      return "home";
+  }
+}
+
+function applyNavigationState(tab: Tab, state: TabViewState): Tab {
+  return {
+    ...tab,
+    title: state.title,
+    view: state.view,
+    album: state.album,
+    artist: state.artist,
+    playlist: state.playlist,
+    searchQuery: state.searchQuery,
+    searchResults: state.searchResults,
+    mixedSearchResults: state.mixedSearchResults,
+    searchLoading: state.searchLoading,
+  };
+}
+
+function stripNavigationHistory(tab: Tab): Tab {
+  const { navigationHistory, ...sessionTab } = tab;
+  void navigationHistory;
+  return sessionTab;
+}
 
 export default function App() {
   useDisableContextMenu();
@@ -59,7 +113,7 @@ export default function App() {
   const playerUIState = usePlayerUIState();
 
   const [tabs, setTabs] = useState<Tab[]>(
-    () => restoredSession?.tabs ?? [{ id: "1", view: "home" }],
+    () => restoredSession?.tabs.map(stripNavigationHistory) ?? [{ id: "1", view: "home" }],
   );
   const [activeTabId, setActiveTabId] = useState(
     () => restoredSession?.activeTabId ?? "1",
@@ -96,6 +150,108 @@ export default function App() {
 
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
   const isQueuePanelOpen = activeTab?.isQueueOpen ?? false;
+  const canNavigateBack = (activeTab?.navigationHistory?.back.length ?? 0) > 0;
+  const canNavigateForward = (activeTab?.navigationHistory?.forward.length ?? 0) > 0;
+
+  const navigateTab = useCallback((tabId: string, nextState: TabViewState) => {
+    setTabs((prevTabs) =>
+      prevTabs.map((tab) => {
+        if (tab.id !== tabId) return tab;
+        const currentState = getNavigationState(tab);
+        if (!currentState) return applyNavigationState(tab, nextState);
+
+        const nextTab = applyNavigationState(tab, nextState);
+        if (getNavigationKey(currentState) === getNavigationKey(nextState)) {
+          return nextTab;
+        }
+
+        return {
+          ...nextTab,
+          navigationHistory: {
+            back: [...(tab.navigationHistory?.back ?? []), currentState],
+            forward: [],
+          },
+        };
+      })
+    );
+  }, []);
+
+  const updateSearchTab = useCallback((tabId: string, query: string, nextState: TabViewState) => {
+    setTabs((prevTabs) =>
+      prevTabs.map((tab) => {
+        if (tab.id !== tabId) return tab;
+
+        const updateHistoryState = (state: TabViewState) =>
+          state.view === "search" && state.searchQuery === query
+            ? nextState
+            : state;
+        const navigationHistory = tab.navigationHistory
+          ? {
+              back: tab.navigationHistory.back.map(updateHistoryState),
+              forward: tab.navigationHistory.forward.map(updateHistoryState),
+            }
+          : undefined;
+
+        if (tab.searchQuery !== query) {
+          return {
+            ...tab,
+            navigationHistory,
+          };
+        }
+
+        return {
+          ...applyNavigationState(tab, nextState),
+          navigationHistory,
+        };
+      })
+    );
+  }, []);
+
+  const handleNavigateBack = useCallback(() => {
+    playerUIStore.setLyricsOpen(false);
+    setTabs((prevTabs) =>
+      prevTabs.map((tab) => {
+        if (tab.id !== activeTabId) return tab;
+
+        const currentState = getNavigationState(tab);
+        const back = tab.navigationHistory?.back ?? [];
+        if (!currentState || back.length === 0) return tab;
+
+        const previousState = back[back.length - 1];
+        const nextTab = applyNavigationState(tab, previousState);
+        return {
+          ...nextTab,
+          navigationHistory: {
+            back: back.slice(0, -1),
+            forward: [currentState, ...(tab.navigationHistory?.forward ?? [])],
+          },
+        };
+      })
+    );
+  }, [activeTabId]);
+
+  const handleNavigateForward = useCallback(() => {
+    playerUIStore.setLyricsOpen(false);
+    setTabs((prevTabs) =>
+      prevTabs.map((tab) => {
+        if (tab.id !== activeTabId) return tab;
+
+        const currentState = getNavigationState(tab);
+        const forward = tab.navigationHistory?.forward ?? [];
+        if (!currentState || forward.length === 0) return tab;
+
+        const nextState = forward[0];
+        const nextTab = applyNavigationState(tab, nextState);
+        return {
+          ...nextTab,
+          navigationHistory: {
+            back: [...(tab.navigationHistory?.back ?? []), currentState],
+            forward: forward.slice(1),
+          },
+        };
+      })
+    );
+  }, [activeTabId]);
 
   const setIsQueuePanelOpen = useCallback(
     (open: boolean) => {
@@ -122,19 +278,10 @@ export default function App() {
 
   const handleNavigateHome = () => {
     playerUIStore.setLyricsOpen(false);
-    setTabs((prevTabs) =>
-      prevTabs.map((tab) =>
-        tab.id === activeTabId
-          ? {
-              ...tab,
-              view: "home",
-              album: undefined,
-              artist: undefined,
-              playlist: undefined,
-            }
-          : tab
-      )
-    );
+    navigateTab(activeTabId, {
+      title: activeTab?.title,
+      view: "home",
+    });
   };
 
   useEffect(() => {
@@ -143,6 +290,12 @@ export default function App() {
   }, [showKeychainNotice]);
 
   useEffect(() => {
+    if (showKeychainNotice) {
+      loadingScreenDismissedRef.current = true;
+      setLoadingScreenState("hidden");
+      return;
+    }
+
     const hasRenderableLibrary = Boolean(libraryState.library);
     if (
       !hasRenderableLibrary
@@ -176,7 +329,7 @@ export default function App() {
       cancelled = true;
       if (fadeTimer !== undefined) window.clearTimeout(fadeTimer);
     };
-  }, [libraryState.library, libraryState.status]);
+  }, [libraryState.library, libraryState.status, showKeychainNotice]);
 
   useEffect(() => {
     const persist = () => {
@@ -184,7 +337,7 @@ export default function App() {
       saveAppSession({
         version: 1,
         tabs: current.tabs.map((tab) => ({
-          ...tab,
+          ...stripNavigationHistory(tab),
           searchLoading: false,
         })),
         activeTabId: current.activeTabId,
@@ -223,19 +376,11 @@ export default function App() {
 
   const handleNavigateAlbum = (album: Album) => {
     playerUIStore.setLyricsOpen(false);
-    setTabs((prevTabs) =>
-      prevTabs.map((tab) =>
-        tab.id === activeTabId
-          ? {
-              ...tab,
-              view: "album",
-              album,
-              artist: undefined,
-              playlist: undefined,
-            }
-          : tab
-      )
-    );
+    navigateTab(activeTabId, {
+      title: activeTab?.title,
+      view: "album",
+      album,
+    });
   };
 
   const handleNavigateArtist = (artist: Artist, openInNewTab = false) => {
@@ -276,20 +421,11 @@ export default function App() {
       return;
     }
 
-    setTabs((prevTabs) =>
-      prevTabs.map((tab) =>
-        tab.id === activeTabId
-          ? {
-              ...tab,
-              view: "artist",
-              artist,
-              title: artist.name,
-              album: undefined,
-              playlist: undefined,
-            }
-          : tab
-      )
-    );
+    navigateTab(activeTabId, {
+      view: "artist",
+      artist,
+      title: artist.name,
+    });
   };
 
   const handleConnectionRestored = async () => {
@@ -298,19 +434,11 @@ export default function App() {
 
   const handleNavigatePlaylist = (playlist: Playlist) => {
     playerUIStore.setLyricsOpen(false);
-    setTabs((prevTabs) =>
-      prevTabs.map((tab) =>
-        tab.id === activeTabId
-          ? {
-              ...tab,
-              view: "playlist",
-              playlist,
-              album: undefined,
-              artist: undefined,
-            }
-          : tab
-      )
-    );
+    navigateTab(activeTabId, {
+      title: activeTab?.title,
+      view: "playlist",
+      playlist,
+    });
   };
 
   const createTab = () => {
@@ -378,71 +506,41 @@ export default function App() {
       setActiveTabId(targetTabId);
       setNextTabId((currentId) => currentId + 1);
     } else {
-      setTabs((prevTabs) =>
-        prevTabs.map((tab) =>
-          tab.id === targetTabId
-            ? {
-                ...tab,
-                view: "search",
-                title: query,
-                album: undefined,
-                artist: undefined,
-                playlist: undefined,
-                searchQuery: query,
-                searchResults: [],
-                mixedSearchResults: { artists: [], tracks: [], albums: [], playlists: [] },
-                searchLoading: true,
-              }
-            : tab
-        )
-      );
+      navigateTab(targetTabId, {
+        view: "search",
+        title: query,
+        searchQuery: query,
+        searchResults: [],
+        mixedSearchResults: { artists: [], tracks: [], albums: [], playlists: [] },
+        searchLoading: true,
+      });
     }
 
     const searchTabId = targetTabId;
     if (onboardingStep === "type-first") setOnboardingStep("play-first");
     if (onboardingStep === "type-second") setOnboardingStep("play-second");
     const applySearchResults = (results: SearchResults) => {
-      setTabs((prevTabs) =>
-        prevTabs.map((tab) =>
-          tab.id === searchTabId && tab.searchQuery === query
-            ? {
-                ...tab,
-                view: "search",
-                title: query,
-                album: undefined,
-                artist: undefined,
-                playlist: undefined,
-                searchQuery: query,
-                searchResults: results.tracks,
-                mixedSearchResults: results,
-                searchLoading: false,
-              }
-            : tab
-        )
-      );
+      updateSearchTab(searchTabId, query, {
+        view: "search",
+        title: query,
+        searchQuery: query,
+        searchResults: results.tracks,
+        mixedSearchResults: results,
+        searchLoading: false,
+      });
     };
 
     void searchController.search(query, applySearchResults)
       .then(applySearchResults)
       .catch(() => {
-        setTabs((prevTabs) =>
-          prevTabs.map((tab) =>
-            tab.id === searchTabId && tab.searchQuery === query
-              ? {
-                  ...tab,
-                  view: "search",
-                  title: query,
-                  album: undefined,
-                  artist: undefined,
-                  playlist: undefined,
-                  searchQuery: query,
-                  searchResults: [],
-                  mixedSearchResults: { artists: [], tracks: [], albums: [], playlists: [] },
-                  searchLoading: false,
-                }
-              : tab
-          )
-        );
+        updateSearchTab(searchTabId, query, {
+          view: "search",
+          title: query,
+          searchQuery: query,
+          searchResults: [],
+          mixedSearchResults: { artists: [], tracks: [], albums: [], playlists: [] },
+          searchLoading: false,
+        });
       });
   };
 
@@ -714,6 +812,66 @@ export default function App() {
         ) !== null;
     };
 
+    const handleMouseNavigation = (event: MouseEvent) => {
+      if (
+        event.button !== MOUSE_BACK_BUTTON
+        && event.button !== MOUSE_FORWARD_BUTTON
+      ) {
+        return;
+      }
+      if (isTextEntry(event.target)) return;
+
+      if (event.button === MOUSE_BACK_BUTTON) {
+        if (isSearchOpen && activeTab?.view !== "settings") {
+          event.preventDefault();
+          setIsSearchOpen(false);
+          return;
+        }
+        if (canNavigateBack) {
+          event.preventDefault();
+          handleNavigateBack();
+        }
+        return;
+      }
+
+      if (canNavigateForward) {
+        event.preventDefault();
+        handleNavigateForward();
+      }
+    };
+
+    const preventAuxNavigation = (event: MouseEvent) => {
+      if (
+        event.button === MOUSE_BACK_BUTTON
+        || event.button === MOUSE_FORWARD_BUTTON
+      ) {
+        event.preventDefault();
+      }
+    };
+
+    window.addEventListener("mousedown", handleMouseNavigation);
+    window.addEventListener("auxclick", preventAuxNavigation);
+    return () => {
+      window.removeEventListener("mousedown", handleMouseNavigation);
+      window.removeEventListener("auxclick", preventAuxNavigation);
+    };
+  }, [
+    activeTab?.view,
+    canNavigateBack,
+    canNavigateForward,
+    handleNavigateBack,
+    handleNavigateForward,
+    isSearchOpen,
+  ]);
+
+  useEffect(() => {
+    const isTextEntry = (target: EventTarget | null) => {
+      return target instanceof Element
+        && target.closest(
+          'input, textarea, select, [contenteditable]:not([contenteditable="false"])',
+        ) !== null;
+    };
+
     const handleShortcut = (event: KeyboardEvent) => {
       if (event.repeat) return;
       const primaryModifierOnly = hasPrimaryModifierOnly(event);
@@ -810,6 +968,10 @@ export default function App() {
           onOpenSettings={handleOpenSettings}
           showSearchBar={activeTab?.view !== "settings" && !playerUIState.isLyricsOpen}
           onOpenSearch={() => setIsSearchOpen(true)}
+          canGoBack={canNavigateBack}
+          canGoForward={canNavigateForward}
+          onNavigateBack={handleNavigateBack}
+          onNavigateForward={handleNavigateForward}
           fullBleedContent={playerUIState.isLyricsOpen}
           rightPanelWidth={queuePanelWidth}
           onRightPanelWidthChange={setQueuePanelWidth}

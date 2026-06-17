@@ -87,14 +87,23 @@
 }
 
 .changesButton {
-  border: 1px solid rgb(255 255 255 / 14%);
-  background: rgb(255 255 255 / 6%);
-  color: var(--color-text-primary);
+  border: 1px solid #ff315a;
+  background: var(--color-accent);
+  color: #fff;
+  box-shadow:
+    0 0 12px rgb(255 0 51 / 58%),
+    0 0 28px rgb(255 0 51 / 24%);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .changesButton:hover {
-  border-color: rgb(255 255 255 / 24%);
-  background: rgb(255 255 255 / 10%);
+  background: #ff1746;
+  box-shadow:
+    0 0 16px rgb(255 0 51 / 76%),
+    0 0 34px rgb(255 0 51 / 34%);
   transform: translateY(-1px);
 }
 

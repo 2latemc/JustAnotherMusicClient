@@ -1,6 +1,6 @@
-import { type MouseEvent, type ReactNode, useEffect, useMemo, useState } from "react";
-import { IconMusic, IconPlayerPlay } from "@tabler/icons-react";
-import { getArtworkUrlCandidates } from "../../datasource/youtube/artwork";
+import { type MouseEvent, type ReactNode } from "react";
+import { IconPlayerPlay } from "@tabler/icons-react";
+import { TrackArtwork } from "./TrackArtwork";
 import styles from "./AlbumCard.module.css";
 
 interface AlbumCardProps {
@@ -22,17 +22,6 @@ export function AlbumCard({
   onClick,
   onContextMenu,
 }: AlbumCardProps) {
-  const artworkCandidates = useMemo(
-    () => getArtworkUrlCandidates(artworkUrl),
-    [artworkUrl],
-  );
-  const [artworkIndex, setArtworkIndex] = useState(0);
-  const currentArtworkUrl = artworkCandidates[artworkIndex];
-
-  useEffect(() => {
-    setArtworkIndex(0);
-  }, [artworkUrl]);
-
   return (
     <div
       className={styles.card}
@@ -45,17 +34,12 @@ export function AlbumCard({
       tabIndex={0}
     >
       <div className={styles.cover} style={{ backgroundColor: color }}>
-        {currentArtworkUrl ? (
-          <img
-            className={styles.artwork}
-            src={currentArtworkUrl}
-            alt=""
-            loading="lazy"
-            onError={() => setArtworkIndex((index) => index + 1)}
-          />
-        ) : (
-          <IconMusic className={styles.artworkFallback} size={48} aria-hidden="true" />
-        )}
+        <TrackArtwork
+          className={styles.artwork}
+          artworkUrl={artworkUrl}
+          iconSize={48}
+          variant="album"
+        />
         <div className={styles.playOverlay}>
           <IconPlayerPlay size={32} className={styles.playIcon} />
         </div>

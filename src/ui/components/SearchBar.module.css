@@ -2,12 +2,41 @@
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 0;
+  gap: 8px;
   min-height: 56px;
   padding: 10px 0 10px 16px;
   border-bottom: 1px solid var(--color-border);
   background: rgb(5 5 5 / 46%);
   backdrop-filter: blur(22px) saturate(115%);
+}
+
+.navigationButton {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: color var(--transition-fast), opacity var(--transition-fast);
+}
+
+.navigationButton:hover {
+  color: var(--color-text-primary);
+}
+
+.navigationButton:disabled {
+  color: rgb(255 255 255 / 22%);
+  cursor: default;
+  opacity: 0.75;
+}
+
+.navigationButton:disabled:hover {
+  color: rgb(255 255 255 / 22%);
 }
 
 .bar {
@@ -34,7 +63,7 @@
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  margin: -10px 0 -10px 10px;
+  margin: -10px 0 -10px 2px;
   padding: 0;
   border: 0;
   border-left: 1px solid rgb(255 255 255 / 4%);
@@ -77,6 +106,7 @@
   .row {
     min-height: 52px;
     padding: 8px 0 8px 8px;
+    gap: 6px;
   }
 
   .bar kbd {

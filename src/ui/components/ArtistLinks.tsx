@@ -13,6 +13,14 @@ type NavigateArtist = (artist: Artist, openInNewTab: boolean) => void;
 
 const ArtistNavigationContext = createContext<NavigateArtist | null>(null);
 
+function getFallbackArtists(fallback: string): ArtistReference[] {
+  return fallback
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean)
+    .map((name) => ({ id: "", name }));
+}
+
 export function ArtistNavigationProvider({
   children,
   onNavigate,
@@ -99,9 +107,15 @@ export function ArtistLinks({
       if (!fallback || fallback === "Unknown artist") {
         return <span className={className}>{fallback}</span>;
       }
+      const fallbackArtists = getFallbackArtists(fallback);
       return (
         <span className={className}>
-          {renderArtist({ id: "", name: fallback })}
+          {fallbackArtists.map((artist, index) => (
+            <span key={`${artist.id}:${artist.name}`}>
+              {index > 0 && ", "}
+              {renderArtist(artist)}
+            </span>
+          ))}
         </span>
       );
     }

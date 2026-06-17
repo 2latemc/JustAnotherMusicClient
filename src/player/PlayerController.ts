@@ -725,11 +725,9 @@ export class PlayerController {
 
   suspendForTabSwitch(): void {
     this.isTabActive = false;
-    // Stop the audio engine completely so the YouTube player stops
-    // streaming audio in the background. The player state (currentTrack,
-    // queue, position) is preserved, so switching back will reload and
-    // resume from the saved position.
-    this.audioEngine.stop();
+    if (this.state.status === "playing") {
+      this.audioEngine.suspend();
+    }
   }
 
   async resumeFromTabSwitch(): Promise<void> {

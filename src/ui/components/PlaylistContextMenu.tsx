@@ -135,7 +135,7 @@ export function PlaylistContextMenuProvider({
   const isSaved = playlist
     ? libraryController.isPlaylistSaved(playlist.id)
     : album
-      ? libraryController.isAlbumSaved(album.id)
+      ? libraryController.isAlbumSaved(album.id) || Boolean(album.playlistId && libraryController.isAlbumSaved(album.playlistId))
       : false;
 
   const getAlbumUrl = (album: Album): string => {
@@ -150,7 +150,8 @@ export function PlaylistContextMenuProvider({
 
   const toggleAlbumSaved = async () => {
     if (!album || isSaving) return;
-    const saved = libraryController.isAlbumSaved(album.id);
+    const saved = libraryController.isAlbumSaved(album.id)
+      || Boolean(album.playlistId && libraryController.isAlbumSaved(album.playlistId));
     setPosition(null);
     setIsSaving(true);
     showPersistentToast(saved ? "Removing..." : "Saving...");

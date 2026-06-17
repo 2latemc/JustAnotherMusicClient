@@ -15,6 +15,7 @@ import {
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   checkForUpdates,
+  getUpdateFailureMessage,
   getInstalledVersion,
   installUpdate,
   type UpdateInfo,
@@ -119,8 +120,8 @@ export function SettingsPage({
       const update = await checkForUpdates();
       setUpdateResult(update);
       setUpdateStatus(update ? "idle" : "current");
-    } catch {
-      setUpdateError("Unable to check for updates.");
+    } catch (error) {
+      setUpdateError(getUpdateFailureMessage(error));
       setUpdateStatus("error");
     }
   };
@@ -462,20 +463,22 @@ export function SettingsPage({
                   : `Preparing version ${updateResult.version}...`
                 : `Version ${updateResult.version} is available.`}
             </span>
-            <button
-              className={styles.githubButton}
-              type="button"
-              disabled={updateStatus === "installing"}
-              onClick={() => void handleInstallUpdate()}
-            >
-              {updateStatus === "installing" ? "Installing..." : "Install"}
-            </button>
+            {updateResult.canInstall && (
+              <button
+                className={styles.githubButton}
+                type="button"
+                disabled={updateStatus === "installing"}
+                onClick={() => void handleInstallUpdate()}
+              >
+                {updateStatus === "installing" ? "Installing..." : "Install"}
+              </button>
+            )}
             <button
               className={styles.secondaryButton}
               type="button"
               onClick={() => void openUrl(updateResult.releaseUrl)}
             >
-              View changes
+              {updateResult.canInstall ? "View changes" : "Download"}
             </button>
           </div>
         )}

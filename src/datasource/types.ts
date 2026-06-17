@@ -32,6 +32,7 @@ export interface Lyrics {
 
 export interface Album {
   id: string;
+  playlistId?: string;
   title: string;
   artist: string;
   artists?: ArtistReference[];

@@ -1,7 +1,6 @@
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
-import { IconArrowsShuffle, IconHeart, IconPlayerPlay, IconPlaylist } from "@tabler/icons-react";
+import { useEffect, useState } from "react";
+import { IconArrowsShuffle, IconHeart, IconPlayerPlay } from "@tabler/icons-react";
 import type { Playlist, Track } from "../../datasource/types";
-import { getArtworkUrlCandidates } from "../../datasource/youtube/artwork";
 import type { LibraryController } from "../../player/LibraryController";
 import type { PlayerControllerActions } from "../../player/playerStore";
 import { markPlaylistPlayed } from "../../player/recentPlaylists";
@@ -11,6 +10,7 @@ import { useLibraryState } from "../../player/playerStore";
 import styles from "./AlbumView.module.css";
 import { ArtistLinks } from "../components/ArtistLinks";
 import { usePlaylistContextMenu } from "../components/PlaylistContextMenu";
+import { TrackArtwork } from "../components/TrackArtwork";
 
 interface PlaylistViewProps {
   playlist?: Playlist;
@@ -25,18 +25,6 @@ export function PlaylistView({ playlist, playerController, libraryController }: 
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const artworkCandidates = useMemo(
-    () => getArtworkUrlCandidates(playlist?.artworkUrl),
-    [playlist?.artworkUrl],
-  );
-  const [artworkIndex, setArtworkIndex] = useState(0);
-  const currentArtworkUrl = artworkCandidates[artworkIndex];
-  const [artworkLoaded, setArtworkLoaded] = useState(false);
-
-  useLayoutEffect(() => {
-    setArtworkIndex(0);
-    setArtworkLoaded(false);
-  }, [playlist?.id, playlist?.artworkUrl]);
 
   useEffect(() => {
     if (!playlist) return;
@@ -106,29 +94,19 @@ export function PlaylistView({ playlist, playerController, libraryController }: 
         className={styles.header}
         onContextMenu={(event) => openPlaylistMenu(event, playlist)}
       >
-        <div className={`${styles.cover} ${styles.coverFrame}`}>
-          {playlist.kind === "liked-songs" || playlist.id === "LM" ? (
+        {playlist.kind === "liked-songs" || playlist.id === "LM" ? (
+          <div className={`${styles.cover} ${styles.coverFrame}`}>
             <IconHeart size={80} stroke={1.6} aria-hidden="true" />
-          ) : (
-            <>
-              {!currentArtworkUrl && (
-              <IconPlaylist size={80} aria-hidden="true" />
-              )}
-              {currentArtworkUrl && (
-                <img
-                  className={`${styles.coverImage} ${artworkLoaded ? styles.coverImageLoaded : ""}`}
-                  src={currentArtworkUrl}
-                  alt=""
-                  onLoad={() => setArtworkLoaded(true)}
-                  onError={() => {
-                    setArtworkLoaded(false);
-                    setArtworkIndex((index) => index + 1);
-                  }}
-                />
-              )}
-            </>
-          )}
-        </div>
+          </div>
+        ) : (
+          <TrackArtwork
+            className={`${styles.cover} ${styles.coverFrame}`}
+            artworkUrl={playlist.artworkUrl}
+            iconSize={80}
+            loading="eager"
+            variant="playlist"
+          />
+        )}
         <div className={styles.headerText}>
           <span className={styles.eyebrow}>Playlist</span>
           <h1 className={styles.title}>{playlist.title}</h1>

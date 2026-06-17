@@ -1,12 +1,38 @@
 .root {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
   color: var(--color-text-muted);
 }
 
 .root img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  opacity: 0;
+  transition: opacity 160ms var(--easing-smooth);
+}
+
+.root img.imageLoaded {
+  opacity: 1;
+}
+
+.fallbackIcon {
+  opacity: 0.65;
+  transition: opacity 160ms var(--easing-smooth);
+}
+
+.fallbackIconHidden {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root img,
+  .fallbackIcon {
+    transition: none;
+  }
 }

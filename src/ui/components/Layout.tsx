@@ -15,6 +15,10 @@ interface LayoutProps {
   onOpenSettings: () => void;
   showSearchBar: boolean;
   onOpenSearch: () => void;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  onNavigateBack: () => void;
+  onNavigateForward: () => void;
   fullBleedContent?: boolean;
   rightPanel?: ReactNode;
   rightPanelWidth?: number;
@@ -30,6 +34,10 @@ export function Layout({
   onOpenSettings,
   showSearchBar,
   onOpenSearch,
+  canGoBack,
+  canGoForward,
+  onNavigateBack,
+  onNavigateForward,
   fullBleedContent = false,
   rightPanel,
   rightPanelWidth = 340,
@@ -80,7 +88,14 @@ export function Layout({
         />
         <div className={styles.contentArea}>
           {showSearchBar && (
-            <SearchBar onOpen={onOpenSearch} onOpenSettings={onOpenSettings} />
+            <SearchBar
+              onOpen={onOpenSearch}
+              onOpenSettings={onOpenSettings}
+              canGoBack={canGoBack}
+              canGoForward={canGoForward}
+              onBack={onNavigateBack}
+              onForward={onNavigateForward}
+            />
           )}
           <div className={styles.contentContainer}>
             <div className={`${styles.pageContent} ${fullBleedContent ? styles.fullBleedContent : ""}`}>

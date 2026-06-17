@@ -1,5 +1,7 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 use base64::{engine::general_purpose::STANDARD, Engine as _};
+#[cfg(not(debug_assertions))]
+use portpicker::pick_unused_port;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -8,6 +10,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use tauri::utils::config::FrontendDist;
+use tauri::utils::config_v1::WindowUrl;
 use tauri::Manager;
 
 #[cfg(target_os = "macos")]
@@ -1693,13 +1697,26 @@ pub fn run() {
         }
     }
 
-    let builder = tauri::Builder::default()
+    let mut context = tauri::generate_context!();
+    let mut builder = tauri::Builder::default()
         .manage(CacheLock(Mutex::new(())))
         .manage(discord_manager)
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init());
+
+    #[cfg(not(debug_assertions))]
+    {
+        let port = pick_unused_port().expect("failed to find an unused localhost port");
+        let url: url::Url = format!("http://localhost:{}", port)
+            .parse()
+            .expect("failed to parse localhost url");
+        let _window_url = WindowUrl::External(url.clone());
+
+        context.config_mut().build.frontend_dist = Some(FrontendDist::Url(url));
+        builder = builder.plugin(tauri_plugin_localhost::Builder::new(port).build());
+    }
 
     #[cfg(target_os = "windows")]
     let builder = builder.manage(windows_media::WindowsMediaSession::new());
@@ -1740,7 +1757,7 @@ pub fn run() {
             #[cfg(target_os = "windows")]
             windows_media::update_windows_media_session
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running tauri application");
 }
 

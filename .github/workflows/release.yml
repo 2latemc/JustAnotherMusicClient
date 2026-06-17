@@ -12,6 +12,9 @@ on:
 permissions:
   contents: write
 
+env:
+  RELEASE_TAG: ${{ inputs.release_tag || github.event.release.tag_name }}
+
 jobs:
   release:
     name: Build ${{ matrix.platform.name }}
@@ -47,31 +50,29 @@ jobs:
         run: gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
 
-      - name: Read release notification marker
+      - name: Read release type
         id: release_metadata
         shell: bash
         run: |
           set -euo pipefail
-          gh release view "$RELEASE_TAG" \
+          is_prerelease="$(gh release view "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
-            --json body \
-            --jq .body > "$RUNNER_TEMP/release-body.txt"
+            --json isPrerelease \
+            --jq .isPrerelease)"
 
-          if grep -Fqi '[notify-update]' "$RUNNER_TEMP/release-body.txt"; then
-            echo "notify_update=true" >> "$GITHUB_OUTPUT"
+          if test "$is_prerelease" = "true"; then
+            echo "publish_update=false" >> "$GITHUB_OUTPUT"
           else
-            echo "notify_update=false" >> "$GITHUB_OUTPUT"
+            echo "publish_update=true" >> "$GITHUB_OUTPUT"
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
 
       - name: Check out repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.release_tag }}
+          ref: ${{ env.RELEASE_TAG }}
           fetch-depth: 0
 
       - name: Verify checked out tag
@@ -79,8 +80,6 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git describe --tags --exact-match)" = "$RELEASE_TAG"
-        env:
-          RELEASE_TAG: ${{ inputs.release_tag }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -130,9 +129,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ inputs.release_tag }}
+          tagName: ${{ env.RELEASE_TAG }}
           releaseDraft: false
-          uploadUpdaterJson: ${{ steps.release_metadata.outputs.notify_update }}
+          uploadUpdaterJson: ${{ steps.release_metadata.outputs.publish_update }}
+          uploadUpdaterSignatures: false
           updaterJsonPreferNsis: true
           args: ${{ matrix.platform.build_args }}
 
@@ -146,7 +146,6 @@ jobs:
             --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
 
       - name: Verify macOS DMG and app signature
         if: startsWith(matrix.platform.name, 'macOS')
@@ -180,30 +179,29 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.release_tag }}
+          ref: ${{ env.RELEASE_TAG }}
           fetch-depth: 0
 
-      - name: Read release notification marker
+      - name: Read release type
         id: release_metadata
         shell: bash
         run: |
           set -euo pipefail
-          gh release view "$RELEASE_TAG" \
+          is_prerelease="$(gh release view "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
-            --json body \
-            --jq .body > "$RUNNER_TEMP/release-body.txt"
+            --json isPrerelease \
+            --jq .isPrerelease)"
 
-          if grep -Fqi '[notify-update]' "$RUNNER_TEMP/release-body.txt"; then
-            echo "notify_update=true" >> "$GITHUB_OUTPUT"
+          if test "$is_prerelease" = "true"; then
+            echo "publish_update=false" >> "$GITHUB_OUTPUT"
           else
-            echo "notify_update=false" >> "$GITHUB_OUTPUT"
+            echo "publish_update=true" >> "$GITHUB_OUTPUT"
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
 
       - name: Download generated updater metadata
-        if: steps.release_metadata.outputs.notify_update == 'true'
+        if: steps.release_metadata.outputs.publish_update == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -214,10 +212,9 @@ jobs:
           test -s "$RUNNER_TEMP/updater-channel/latest.json"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
 
       - name: Publish updater channel
-        if: steps.release_metadata.outputs.notify_update == 'true'
+        if: steps.release_metadata.outputs.publish_update == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -243,5 +240,3 @@ jobs:
 
           git commit -m "Offer $RELEASE_TAG through the updater"
           git push origin updater-channel
-        env:
-          RELEASE_TAG: ${{ inputs.release_tag }}

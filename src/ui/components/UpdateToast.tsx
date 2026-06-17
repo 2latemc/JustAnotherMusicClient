@@ -56,21 +56,28 @@ export function UpdateToast({ update, onDismiss }: UpdateToastProps) {
         )}
         {error && <span className={styles.error}>{error}</span>}
       </div>
-      <button
-        className={styles.installButton}
-        type="button"
-        disabled={installing}
-        onClick={() => void install()}
-      >
-        {installing ? "Installing..." : "Install"}
-      </button>
-      <button
+      {update.canInstall && (
+        <button
+          className={styles.installButton}
+          type="button"
+          disabled={installing}
+          onClick={() => void install()}
+        >
+          {installing ? "Installing..." : "Install"}
+        </button>
+      )}
+      <a
         className={styles.changesButton}
-        type="button"
-        onClick={() => void openUrl(update.releaseUrl)}
+        href={update.releaseUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => {
+          e.preventDefault();
+          void openUrl(update.releaseUrl);
+        }}
       >
-        View changes
-      </button>
+        Download
+      </a>
       <button
         className={styles.closeButton}
         type="button"

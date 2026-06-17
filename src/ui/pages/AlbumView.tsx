@@ -6,6 +6,7 @@ import type { PlayerControllerActions } from "../../player/playerStore";
 import { shuffleTracks } from "../../player/shuffleTracks";
 import { useTrackContextMenu } from "../components/TrackContextMenu";
 import { ArtistLinks } from "../components/ArtistLinks";
+import { TrackArtwork } from "../components/TrackArtwork";
 import styles from "./AlbumView.module.css";
 
 interface AlbumViewProps {
@@ -54,7 +55,13 @@ export function AlbumView({ album, playerController, libraryController }: AlbumV
   return (
     <div className={styles.root}>
       <header className={styles.header}>
-        {album.artworkUrl ? <img className={styles.cover} src={album.artworkUrl} alt="" /> : <div className={styles.cover} />}
+        <TrackArtwork
+          className={styles.cover}
+          artworkUrl={album.artworkUrl}
+          iconSize={80}
+          loading="eager"
+          variant="album"
+        />
         <div className={styles.headerText}>
           <span className={styles.eyebrow}>Album</span>
           <h1 className={styles.title}>{album.title}</h1>

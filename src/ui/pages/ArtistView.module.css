@@ -374,10 +374,6 @@
   transform: translateX(-50%);
 }
 
-.toastLoadingIcon {
-  animation: loadingIconSpin 800ms linear infinite;
-}
-
 @keyframes loadingIconSpin {
   from {
     transform: rotate(0deg);
@@ -569,8 +565,7 @@
   .releaseGrid,
   .releaseCard,
   .artistTitleCopyIcon,
-  .buttonLoadingIcon,
-  .toastLoadingIcon {
+  .buttonLoadingIcon {
     animation: none;
     transition: none;
   }

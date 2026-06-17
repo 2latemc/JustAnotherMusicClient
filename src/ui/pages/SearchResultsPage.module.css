@@ -127,6 +127,18 @@
   outline-offset: -2px;
 }
 
+.artistCard.selected {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.selectedAlbumCard {
+  border-radius: 12px;
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
 .index,
 .text span {
   color: var(--color-text-secondary);

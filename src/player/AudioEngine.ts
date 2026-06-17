@@ -1,4 +1,3 @@
-import { isTauri } from "@tauri-apps/api/core";
 import { logInternalError, logInternalInfo } from "../internal/logging";
 
 type YouTubePlayerEvent = {
@@ -59,10 +58,10 @@ let playbackClaimId = 0;
 let playbackOwner: AudioEngine | null = null;
 
 function shouldUseNativeAudio(): boolean {
-  const platform = `${navigator.platform} ${navigator.userAgent}`;
-  return isTauri()
-    && !import.meta.env.DEV
-    && /(Linux|Mac)/i.test(platform);
+  // Native audio playback is disabled on macOS/Linux because the backend
+  // download path (getStreamData) can fail with 403 errors. The iframe-based
+  // YouTube player is more reliable across all platforms.
+  return false;
 }
 
 function detectAudioMimeType(bytes: Uint8Array): string {
@@ -438,7 +437,7 @@ export class AudioEngine {
           enablejsapi: 1,
           origin: window.location.origin,
           playsinline: 1,
-          widget_referrer: "https://music.youtube.com/",
+          widget_referrer: `${window.location.origin}/`,
         },
         events: {
           onReady: () => {

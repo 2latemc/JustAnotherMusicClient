@@ -10,9 +10,9 @@ import {
   getRecentPlaylistTimestamp,
   subscribeToRecentPlaylists,
 } from "../../player/recentPlaylists";
-import { getArtworkUrlCandidates } from "../../datasource/youtube/artwork";
 import styles from "./Sidebar.module.css";
 import { ArtistLinks } from "./ArtistLinks";
+import { TrackArtwork } from "./TrackArtwork";
  
 const PLAYLIST_ORDER_KEY = "ytc-sidebar-playlist-order";
 const ALBUM_ORDER_KEY = "ytc-sidebar-album-order";
@@ -73,17 +73,6 @@ const TEXT_HIDE_THRESHOLD = 120;
 
 type LibraryView = "albums" | "playlists";
 function SidebarAlbumArtwork({ album }: { album: Album }) {
-  const artworkCandidates = useMemo(
-    () => getArtworkUrlCandidates(album.artworkUrl),
-    [album.artworkUrl],
-  );
-  const [artworkIndex, setArtworkIndex] = useState(0);
-  const currentArtworkUrl = artworkCandidates[artworkIndex];
-
-  useEffect(() => {
-    setArtworkIndex(0);
-  }, [album.artworkUrl]);
-
   if (album.id === "LM") {
     return (
       <div className={`${styles.albumPreview} ${styles.albumPreviewFallback} ${styles.likedSongsPreview}`}>
@@ -92,38 +81,18 @@ function SidebarAlbumArtwork({ album }: { album: Album }) {
     );
   }
 
-  if (!currentArtworkUrl) {
-    return (
-      <div className={`${styles.albumPreview} ${styles.albumPreviewFallback}`}>
-        <IconDisc size={24} aria-hidden="true" />
-      </div>
-    );
-  }
-
   return (
-    <img
+    <TrackArtwork
       className={styles.albumPreview}
-      src={currentArtworkUrl}
-      alt=""
-      loading="lazy"
-      onError={() => setArtworkIndex((index) => index + 1)}
+      artworkUrl={album.artworkUrl}
+      iconSize={24}
+      variant="album"
     />
   );
 }
 
 
 function SidebarPlaylistArtwork({ playlist }: { playlist: Playlist }) {
-  const artworkCandidates = useMemo(
-    () => getArtworkUrlCandidates(playlist.artworkUrl),
-    [playlist.artworkUrl],
-  );
-  const [artworkIndex, setArtworkIndex] = useState(0);
-  const currentArtworkUrl = artworkCandidates[artworkIndex];
-
-  useEffect(() => {
-    setArtworkIndex(0);
-  }, [playlist.artworkUrl]);
-
   if (playlist.kind === "liked-songs" || playlist.id === "LM") {
     return (
       <div className={`${styles.albumPreview} ${styles.albumPreviewFallback} ${styles.likedSongsPreview}`}>
@@ -132,21 +101,12 @@ function SidebarPlaylistArtwork({ playlist }: { playlist: Playlist }) {
     );
   }
 
-  if (!currentArtworkUrl) {
-    return (
-      <div className={`${styles.albumPreview} ${styles.albumPreviewFallback}`}>
-        <IconPlaylist size={24} aria-hidden="true" />
-      </div>
-    );
-  }
-
   return (
-    <img
+    <TrackArtwork
       className={styles.albumPreview}
-      src={currentArtworkUrl}
-      alt=""
-      loading="lazy"
-      onError={() => setArtworkIndex((index) => index + 1)}
+      artworkUrl={playlist.artworkUrl}
+      iconSize={24}
+      variant="playlist"
     />
   );
 }

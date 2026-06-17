@@ -11,6 +11,33 @@ import { usePlaylistContextMenu } from "./PlaylistContextMenu";
 const RECENT_SEARCHES_KEY = "yt-music-dock:recent-searches";
 const MAX_RECENT_SEARCHES = 5;
 
+function normalizeSearchText(value: string): string {
+  return value.trim().toLocaleLowerCase();
+}
+
+function normalizeSearchKey(value: string): string {
+  return normalizeSearchText(value)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function searchMatchScore(value: string, query: string): number {
+  const normalizedValue = normalizeSearchText(value);
+  const normalizedValueKey = normalizeSearchKey(value);
+  const queryKey = normalizeSearchKey(query);
+  if (!normalizedValue || !query) return 0;
+  if (normalizedValue === query) return 4;
+  if (normalizedValueKey && queryKey && normalizedValueKey === queryKey) return 4;
+  if (normalizedValue.startsWith(query)) return 3;
+  if (normalizedValueKey && queryKey && normalizedValueKey.startsWith(queryKey)) return 3;
+  if (normalizedValue.includes(query)) return 2;
+  if (normalizedValueKey && queryKey && normalizedValueKey.includes(queryKey)) return 2;
+  if (query.includes(normalizedValue)) return 1;
+  if (normalizedValueKey && queryKey && queryKey.includes(normalizedValueKey)) return 1;
+  return 0;
+}
+
 function loadRecentSearches(): string[] {
   try {
     const value = JSON.parse(localStorage.getItem(RECENT_SEARCHES_KEY) ?? "[]");
@@ -172,32 +199,31 @@ export function SearchOverlay({
     return null;
   })();
   const remotePreview = (() => {
-    const normalizedQuery = query.trim().toLocaleLowerCase();
-    // Prefer artists: if any artist name matches exactly or has high
-    // similarity to the query, show the artist preview card instead of
-    // a track. Artists are the most relevant result for artist names.
-    const exactArtist = searchResults.artists.find(
-      (artist) => artist.name.toLocaleLowerCase() === normalizedQuery,
-    );
-    if (exactArtist) return { type: "artist" as const, value: exactArtist };
-    const exactTrack = searchResults.tracks.find(
-      (track) => track.title.toLocaleLowerCase() === normalizedQuery,
-    );
-    if (exactTrack) return { type: "track" as const, value: exactTrack };
-    // Check for partial/close artist matches before falling back to the
-    // first track. A partial artist match is more informative than an
-    // unrelated song.
-    const closeArtist = searchResults.artists.find((artist) =>
-      artist.name.toLocaleLowerCase().includes(normalizedQuery)
-      || normalizedQuery.includes(artist.name.toLocaleLowerCase())
-    );
-    if (closeArtist) return { type: "artist" as const, value: closeArtist };
-    const closeTrack = searchResults.tracks.find((track) =>
-      track.title.toLocaleLowerCase().includes(normalizedQuery)
-    );
-    if (closeTrack) return { type: "track" as const, value: closeTrack };
+    const normalizedQuery = normalizeSearchText(query);
+    const rankedArtist = searchResults.artists
+      .map((artist) => ({
+        artist,
+        score: searchMatchScore(artist.name, normalizedQuery),
+      }))
+      .filter((candidate) => candidate.score > 0)
+      .sort((left, right) => right.score - left.score)[0];
+    const rankedTrack = searchResults.tracks
+      .map((track) => ({
+        track,
+        score: searchMatchScore(track.title, normalizedQuery),
+      }))
+      .filter((candidate) => candidate.score > 0)
+      .sort((left, right) => right.score - left.score)[0];
+
+    if (rankedArtist && (!rankedTrack || rankedArtist.score >= rankedTrack.score)) {
+      return { type: "artist" as const, value: rankedArtist.artist };
+    }
+    if (rankedTrack) return { type: "track" as const, value: rankedTrack.track };
     if (searchResults.tracks[0]) {
       return { type: "track" as const, value: searchResults.tracks[0] };
+    }
+    if (searchResults.artists[0]) {
+      return { type: "artist" as const, value: searchResults.artists[0] };
     }
     if (searchResults.albums[0]) {
       return { type: "album" as const, value: searchResults.albums[0] };
@@ -207,9 +233,9 @@ export function SearchOverlay({
     }
     return null;
   })();
-  const normalizedPreviewQuery = query.trim().toLocaleLowerCase();
+  const normalizedPreviewQuery = normalizeSearchText(query);
   const preview = remotePreview?.type === "artist"
-    && remotePreview.value.name.toLocaleLowerCase() === normalizedPreviewQuery
+    && normalizeSearchText(remotePreview.value.name) === normalizedPreviewQuery
     ? remotePreview
     : libraryPreview ?? remotePreview;
   const visibleRecentSearches = query ? [] : recentSearches;
@@ -343,6 +369,7 @@ export function SearchOverlay({
               artworkUrl={preview.value.artworkUrl}
               iconSize={26}
               loading="eager"
+              variant={preview.type === "artist" ? "artist" : "track"}
             />
             <span className={styles.trackText}>
               <strong>
