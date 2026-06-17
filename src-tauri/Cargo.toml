@@ -1,6 +1,6 @@
 [package]
 name = "just-another-music-client"
-version = "1.2.5"
+version = "1.2.4"
 description = "A desktop music client"
 authors = ["you"]
 edition = "2021"
@@ -21,8 +21,6 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-autostart = "2"
 tauri-plugin-opener = "2"
-tauri-plugin-localhost = "2"
-portpicker = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip", "brotli", "deflate"] }
