@@ -1,8 +1,11 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+// @ts-expect-error node builtin types are not included for the Vite config
+import { fileURLToPath } from "node:url";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
+const resolveEntry = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
@@ -10,8 +13,8 @@ export default defineConfig(async () => ({
   build: {
     rollupOptions: {
       input: {
-        main: "index.html",
-        mini: "mini.html",
+        main: resolveEntry("./index.html"),
+        mini: resolveEntry("./mini.html"),
       },
     },
   },
