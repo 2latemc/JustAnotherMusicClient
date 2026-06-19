@@ -26,6 +26,7 @@ export default function MiniPlayer() {
   });
   const [expanded, setExpanded] = useState(false);
   const [timeState, setTimeState] = useState<TimeSync>({ currentTime: 0, duration: 0 });
+const [cachedArtwork, setCachedArtwork] = useState<string | null>(null);
 
 const expandedRef = useRef(false);
 
@@ -36,7 +37,13 @@ const setExpandedBoth = (val: boolean) => {
   useEffect(() => {
     const setup = async () => {
       const unlisten = await listen<PlayerSync>("player-state-sync", (event) => {
-        setPlayerState(event.payload);
+       setPlayerState(prev => {
+        // only update artwork if it actually changed
+        if (event.payload.artworkUrl !== prev.artworkUrl) {
+          setCachedArtwork(event.payload.artworkUrl);
+        }
+        return event.payload;
+      });
       });
       return unlisten;
     };
@@ -189,10 +196,10 @@ useEffect(() => {
     {/* bottom pill — always visible, never moves */}
     <div data-tauri-drag-region className={styles.miniContainer}>
       <button className={styles.albumArt} onClick={handleRestore} aria-label="Restore">
-        {albumArt
-          ? <img src={albumArt} alt="" className={styles.albumImg} />
-          : <div className={styles.albumPlaceholder}>♪</div>
-        }
+         {cachedArtwork
+    ? <img src={cachedArtwork} alt="" className={styles.albumImg} />
+    : <div className={styles.albumPlaceholder}>♪</div>
+  }
       </button>
       <div className={styles.controls}>
         <button className={styles.btn} onClick={() => emit("mini-player:skip-previous")} aria-label="Previous">⏮</button>
