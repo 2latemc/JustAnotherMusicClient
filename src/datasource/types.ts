@@ -11,6 +11,7 @@ export interface Track {
   title: string;
   artist: string;
   artists?: ArtistReference[];
+  album?: string;
   durationSec?: number;
   artworkUrl?: string;
   playlistItemId?: string;

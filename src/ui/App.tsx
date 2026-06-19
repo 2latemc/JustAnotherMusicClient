@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { Album, Artist, Playlist, SearchResults, Track } from "../datasource/types";
 import { useDisableContextMenu } from "./hooks/useDisableContextMenu";
 import { HomePage } from "./pages/HomePage";
@@ -38,6 +39,11 @@ import {
   type UpdateInfo,
 } from "../internal/updateChecker";
 import {
+  getAppSetting,
+  removeAppSetting,
+  setAppSetting,
+} from "../internal/appSettings";
+import {
   Onboarding,
   OnboardingCompleteToast,
   KeychainNotice,
@@ -49,6 +55,7 @@ import { isMacOS } from "./platform";
 const restoredSession = loadAppSession();
 const LOADING_SCREEN_FADE_MS = 80;
 const ONBOARDING_COMPLETE_KEY = "yt-music-dock:onboarding-complete";
+const ONBOARDING_COMPLETE_SETTING_KEY = "onboardingComplete";
 const KEYCHAIN_NOTICE_COMPLETE_KEY = "yt-music-dock:keychain-notice-complete";
 const LOADING_SCREEN_MIN_MS = 1000;
 const MOUSE_BACK_BUTTON = 3;
@@ -106,6 +113,42 @@ function stripNavigationHistory(tab: Tab): Tab {
   return sessionTab;
 }
 
+function readLocalOnboardingComplete(): boolean {
+  try {
+    return localStorage.getItem(ONBOARDING_COMPLETE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function saveLocalOnboardingComplete(): void {
+  try {
+    localStorage.setItem(ONBOARDING_COMPLETE_KEY, "true");
+  } catch {
+    // Durable app settings are the source of truth.
+  }
+}
+
+function clearLocalOnboardingComplete(): void {
+  try {
+    localStorage.removeItem(ONBOARDING_COMPLETE_KEY);
+  } catch {
+    // Durable app settings are the source of truth.
+  }
+}
+
+async function hasStoredYoutubeSession(): Promise<boolean> {
+  const [credentials, cookie] = await Promise.allSettled([
+    invoke<string | null>("load_youtube_credentials"),
+    invoke<string | null>("load_youtube_music_cookie"),
+  ]);
+
+  return (
+    credentials.status === "fulfilled" && credentials.value !== null
+    || cookie.status === "fulfilled" && cookie.value !== null
+  );
+}
+
 export default function App() {
   useDisableContextMenu();
   const libraryState = useLibraryState();
@@ -125,9 +168,10 @@ export default function App() {
   const [sidebarWidth, setSidebarWidth] = useState(240);
   const [queuePanelWidth, setQueuePanelWidth] = useState(340);
   const [loadingScreenState, setLoadingScreenState] = useState<"visible" | "leaving" | "hidden">("visible");
-  const [onboardingStep, setOnboardingStep] = useState<OnboardingStep | null>(() =>
-    localStorage.getItem(ONBOARDING_COMPLETE_KEY) === "true" ? null : "open-search"
+  const [onboardingComplete, setOnboardingComplete] = useState<boolean | null>(() =>
+    readLocalOnboardingComplete() ? true : null
   );
+  const [onboardingStep, setOnboardingStep] = useState<OnboardingStep | null>(null);
   const [showQueueMounted, setShowQueueMounted] = useState(false);
   const [onboardingFirstTabId, setOnboardingFirstTabId] = useState(activeTabId);
   const [onboardingSecondTabId, setOnboardingSecondTabId] = useState<string | null>(null);
@@ -136,9 +180,7 @@ export default function App() {
   const [showKeychainNotice, setShowKeychainNotice] = useState(
     () => isMacOS && localStorage.getItem(KEYCHAIN_NOTICE_COMPLETE_KEY) !== "true"
   );
-  const [showOnboardingWelcome, setShowOnboardingWelcome] = useState(
-    () => localStorage.getItem(ONBOARDING_COMPLETE_KEY) !== "true"
-  );
+  const [showOnboardingWelcome, setShowOnboardingWelcome] = useState(false);
   const [availableUpdate, setAvailableUpdate] = useState<UpdateInfo | null>(null);
   const dismissAvailableUpdate = useCallback(() => {
     setAvailableUpdate(null);
@@ -152,6 +194,52 @@ export default function App() {
   const isQueuePanelOpen = activeTab?.isQueueOpen ?? false;
   const canNavigateBack = (activeTab?.navigationHistory?.back.length ?? 0) > 0;
   const canNavigateForward = (activeTab?.navigationHistory?.forward.length ?? 0) > 0;
+
+  const markOnboardingComplete = useCallback((showCompleteToast: boolean) => {
+    saveLocalOnboardingComplete();
+    setOnboardingComplete(true);
+    setOnboardingStep(null);
+    setShowOnboardingWelcome(false);
+    if (showCompleteToast) setShowOnboardingComplete(true);
+    void setAppSetting(ONBOARDING_COMPLETE_SETTING_KEY, true);
+  }, []);
+
+  useEffect(() => {
+    if (showKeychainNotice) return;
+
+    let active = true;
+
+    const loadOnboardingCompletion = async () => {
+      if (readLocalOnboardingComplete()) {
+        markOnboardingComplete(false);
+        return;
+      }
+
+      const storedComplete = await getAppSetting<boolean>(ONBOARDING_COMPLETE_SETTING_KEY);
+      if (!active) return;
+
+      if (storedComplete === true) {
+        markOnboardingComplete(false);
+        return;
+      }
+
+      if (await hasStoredYoutubeSession()) {
+        if (!active) return;
+        markOnboardingComplete(false);
+        return;
+      }
+
+      if (!active) return;
+      setOnboardingComplete(false);
+      setOnboardingStep("open-search");
+      setShowOnboardingWelcome(true);
+    };
+
+    void loadOnboardingCompletion();
+    return () => {
+      active = false;
+    };
+  }, [markOnboardingComplete, showKeychainNotice]);
 
   const navigateTab = useCallback((tabId: string, nextState: TabViewState) => {
     setTabs((prevTabs) =>
@@ -620,15 +708,12 @@ export default function App() {
     }
     setActiveTabId(tabId);
     if (onboardingStep === "switch-back" && tabId === onboardingFirstTabId) {
-      localStorage.setItem(ONBOARDING_COMPLETE_KEY, "true");
-      setOnboardingStep(null);
-      setShowOnboardingComplete(true);
+      markOnboardingComplete(true);
     }
   };
 
   const finishOnboarding = () => {
-    localStorage.setItem(ONBOARDING_COMPLETE_KEY, "true");
-    setOnboardingStep(null);
+    markOnboardingComplete(false);
   };
 
   const handlePlaySearchTrack = async (track: Track) => {
@@ -683,11 +768,14 @@ export default function App() {
   const restartOnboarding = () => {
     const firstMusicTab = tabs.find((tab) => tab.view !== "settings");
     if (!firstMusicTab) return;
-    localStorage.removeItem(ONBOARDING_COMPLETE_KEY);
+    clearLocalOnboardingComplete();
+    setOnboardingComplete(false);
     setOnboardingFirstTabId(firstMusicTab.id);
     setOnboardingSecondTabId(null);
     setOnboardingSearchQuery("");
     setOnboardingStep("open-search");
+    setShowOnboardingWelcome(false);
+    void removeAppSetting(ONBOARDING_COMPLETE_SETTING_KEY);
     handleSwitchTab(firstMusicTab.id);
   };
 
@@ -1079,7 +1167,7 @@ export default function App() {
           {loadingScreenState === "hidden" && showOnboardingWelcome && (
             <OnboardingWelcome />
           )}
-          {loadingScreenState === "hidden" && !showOnboardingWelcome && onboardingStep && (
+          {loadingScreenState === "hidden" && onboardingComplete === false && !showOnboardingWelcome && onboardingStep && (
             <Onboarding step={onboardingStep} onSkip={finishOnboarding} />
           )}
           {showOnboardingComplete && <OnboardingCompleteToast />}

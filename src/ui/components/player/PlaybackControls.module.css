@@ -88,6 +88,30 @@
   height: 32px;
 }
 
+.extraControl {
+  display: flex;
+  align-items: center;
+  margin: -12px;
+  padding: 12px;
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.extraControlHoverOnly {
+  opacity: 0;
+  transform: scale(0.92);
+  pointer-events: none;
+}
+
+.playbackControls:hover .extraControlHoverOnly,
+.playbackControls:focus-within .extraControlHoverOnly {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+
 @keyframes loadingIconSpin {
   from {
     transform: rotate(0deg) scale(1);

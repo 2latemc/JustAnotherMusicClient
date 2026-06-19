@@ -62,6 +62,18 @@ export function TitleBar({
     windowsStyleWindowControls ? styles.windowControlsWindows : "",
   ].filter(Boolean).join(" ");
 
+  const startWindowDrag = async () => {
+    try {
+      if (await appWindow.isMaximized()) {
+        await appWindow.unmaximize();
+      }
+
+      await appWindow.startDragging();
+    } catch (error) {
+      logInternalError("TitleBar.startWindowDrag failed", error);
+    }
+  };
+
   const handleMinimize = async () => {
     try {
       if (await appWindow.isFullscreen()) {
@@ -119,7 +131,7 @@ export function TitleBar({
 
           homePointerRef.current = null;
           suppressHomeClickRef.current = true;
-          void appWindow.startDragging();
+          void startWindowDrag();
         }}
         onPointerUp={(event) => {
           if (homePointerRef.current?.pointerId === event.pointerId) {
@@ -147,7 +159,15 @@ export function TitleBar({
         onboardingFirstTabId={onboardingFirstTabId}
       />
 
-      <div className={styles.dragArea} data-tauri-drag-region aria-label="Drag window" />
+      <div
+        className={styles.dragArea}
+        data-tauri-drag-region={isLinux ? "" : undefined}
+        aria-label="Drag window"
+        onPointerDown={(event) => {
+          if (isLinux || event.button !== 0) return;
+          void startWindowDrag();
+        }}
+      />
 
       {!nativeWindowControls && (
         <div className={windowControlsClasses} aria-label="Window controls">

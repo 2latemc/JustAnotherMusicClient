@@ -10,7 +10,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+#[cfg(not(debug_assertions))]
 use tauri::utils::config::FrontendDist;
+#[cfg(not(debug_assertions))]
 use tauri::utils::config_v1::WindowUrl;
 use tauri::Manager;
 
@@ -46,6 +48,7 @@ const YOUTUBE_COOKIE_MAX_CHUNKS: usize = 16;
 const DEFAULT_CACHE_MAX_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 
 struct CacheLock(Mutex<()>);
+struct AppSettingsLock(Mutex<()>);
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -132,6 +135,72 @@ fn write_json_file<T: Serialize>(path: &Path, value: &T) -> Result<(), CommandEr
     }
     fs::rename(&temp_path, path)
         .map_err(|error| cache_error(format!("cache finalize failed: {error}")))
+}
+
+fn app_settings_path(app: &tauri::AppHandle) -> Result<PathBuf, CommandError> {
+    app.path()
+        .app_data_dir()
+        .map(|path| path.join("settings-v1.json"))
+        .map_err(|error| CommandError {
+            message: format!("application settings directory unavailable: {error}"),
+        })
+}
+
+fn read_app_settings(
+    app: &tauri::AppHandle,
+) -> Result<HashMap<String, serde_json::Value>, CommandError> {
+    let path = app_settings_path(app)?;
+    if !path.exists() {
+        return Ok(HashMap::new());
+    }
+
+    let bytes = fs::read(path).map_err(|error| CommandError {
+        message: format!("application settings read failed: {error}"),
+    })?;
+    serde_json::from_slice(&bytes).map_err(|error| CommandError {
+        message: format!("application settings parse failed: {error}"),
+    })
+}
+
+#[tauri::command]
+fn app_setting_get(
+    app: tauri::AppHandle,
+    lock: tauri::State<'_, AppSettingsLock>,
+    key: String,
+) -> Result<Option<serde_json::Value>, CommandError> {
+    let _guard = lock.0.lock().map_err(|_| CommandError {
+        message: "application settings lock unavailable".to_string(),
+    })?;
+    Ok(read_app_settings(&app)?.remove(&key))
+}
+
+#[tauri::command]
+fn app_setting_set(
+    app: tauri::AppHandle,
+    lock: tauri::State<'_, AppSettingsLock>,
+    key: String,
+    value: serde_json::Value,
+) -> Result<(), CommandError> {
+    let _guard = lock.0.lock().map_err(|_| CommandError {
+        message: "application settings lock unavailable".to_string(),
+    })?;
+    let mut settings = read_app_settings(&app)?;
+    settings.insert(key, value);
+    write_json_file(&app_settings_path(&app)?, &settings)
+}
+
+#[tauri::command]
+fn app_setting_remove(
+    app: tauri::AppHandle,
+    lock: tauri::State<'_, AppSettingsLock>,
+    key: String,
+) -> Result<(), CommandError> {
+    let _guard = lock.0.lock().map_err(|_| CommandError {
+        message: "application settings lock unavailable".to_string(),
+    })?;
+    let mut settings = read_app_settings(&app)?;
+    settings.remove(&key);
+    write_json_file(&app_settings_path(&app)?, &settings)
 }
 
 fn read_cache_settings(app: &tauri::AppHandle) -> Result<CacheSettings, CommandError> {
@@ -1686,20 +1755,12 @@ pub fn run() {
     let discord_manager =
         std::sync::Arc::new(std::sync::Mutex::new(discord_rpc::DiscordRpcManager::new()));
 
-    // Try to connect to Discord immediately
-    if let Ok(manager) = discord_manager.lock() {
-        if let Err(e) = manager.connect() {
-            eprintln!(
-                "[internal][discord_rpc] failed to initialize Discord connection: {}",
-                e
-            );
-            // This is not fatal - Discord might not be running, try again later
-        }
-    }
-
+    #[allow(unused_mut)]
     let mut context = tauri::generate_context!();
+    #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
         .manage(CacheLock(Mutex::new(())))
+        .manage(AppSettingsLock(Mutex::new(())))
         .manage(discord_manager)
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -1738,6 +1799,9 @@ pub fn run() {
             greet,
             quit_app,
             frontend_log,
+            app_setting_get,
+            app_setting_set,
+            app_setting_remove,
             fetch_audio_bytes,
             fetch_youtube_music_audio,
             proxy_http_request,

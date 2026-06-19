@@ -1,15 +1,22 @@
 import {
+  IconArrowsShuffle,
   IconLoader2,
   IconPlayerPause,
   IconPlayerPlay,
   IconPlayerSkipBack,
   IconPlayerSkipForward,
+  IconRepeat,
+  IconRepeatOff,
 } from "@tabler/icons-react";
 import { usePlayerState } from "../../../player/playerStore";
 import { playerController } from "../../../player/playerStore";
 import styles from "./PlaybackControls.module.css";
 
-export function PlaybackControls() {
+interface PlaybackControlsProps {
+  extraControlsAlwaysVisible?: boolean;
+}
+
+export function PlaybackControls({ extraControlsAlwaysVisible = true }: PlaybackControlsProps) {
   const state = usePlayerState();
   const isBusy = state.status === "loading";
   const isPlaying = state.status === "playing";
@@ -24,6 +31,10 @@ export function PlaybackControls() {
 
   const handleSkipPrevious = () => {
     void playerController.skipToPrevious();
+  };
+
+  const handlePlaybackOrderCycle = () => {
+    playerController.cyclePlaybackOrderMode();
   };
 
   return (
@@ -69,6 +80,40 @@ export function PlaybackControls() {
       >
         <IconPlayerSkipForward size={20} />
       </button>
+
+      <div
+        className={`${styles.extraControl} ${
+          extraControlsAlwaysVisible ? "" : styles.extraControlHoverOnly
+        }`}
+      >
+        <button
+          type="button"
+          className={`${styles.controlButton} ${styles.skipButton}`}
+          onClick={handlePlaybackOrderCycle}
+          aria-label={
+            state.playbackOrderMode === "repeat-one"
+              ? "Loop current song"
+              : state.playbackOrderMode === "shuffle"
+                ? "Shuffle playback"
+                : "Play in order"
+          }
+          title={
+            state.playbackOrderMode === "repeat-one"
+              ? "Loop current song"
+              : state.playbackOrderMode === "shuffle"
+                ? "Shuffle"
+                : "In order"
+          }
+        >
+          {state.playbackOrderMode === "repeat-one" ? (
+            <IconRepeat size={20} />
+          ) : state.playbackOrderMode === "shuffle" ? (
+            <IconArrowsShuffle size={20} />
+          ) : (
+            <IconRepeatOff size={20} />
+          )}
+        </button>
+      </div>
     </div>
   );
 }

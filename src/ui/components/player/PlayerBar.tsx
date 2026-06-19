@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { IconArrowsShuffle, IconPlayerPlay, IconPlaylist, IconRepeat, IconRepeatOff } from "@tabler/icons-react";
+import { IconPlayerPlay, IconPlaylist } from "@tabler/icons-react";
 import { tauriFetch } from "../../../datasource/youtube/tauriFetch";
 import { TrackInfo } from "./TrackInfo";
 import { PlaybackControls } from "./PlaybackControls";
 import { SeekBar } from "./SeekBar";
 import { VolumeControl } from "./VolumeControl";
 import { LyricsButton } from "./LyricsButton";
-import { playerController, usePlayerState } from "../../../player/playerStore";
+import { useExtraPlayerControlsAlwaysVisible } from "../../settings/playerControls";
 import styles from "./PlayerBar.module.css";
 
 interface PlayerBarProps {
@@ -127,12 +127,7 @@ export function PlayerBar({ onToggleLyrics, onToggleQueue, isQueueOpen, onConnec
     }
   };
 
-  const playerState = usePlayerState();
-  const playbackOrderMode = playerState.playbackOrderMode;
-
-  const handleShuffleCycle = () => {
-    playerController.cyclePlaybackOrderMode();
-  };
+  const extraControlsAlwaysVisible = useExtraPlayerControlsAlwaysVisible();
 
   return (
     <>
@@ -168,40 +163,16 @@ export function PlayerBar({ onToggleLyrics, onToggleQueue, isQueueOpen, onConnec
           </div>
 
           <div className={styles.centerSection}>
-            <PlaybackControls />
+            <PlaybackControls extraControlsAlwaysVisible={extraControlsAlwaysVisible} />
           </div>
 
           <div className={styles.rightSection}>
-            <div className={styles.volumeControlsWrapper}>
+            <div
+              className={`${styles.volumeControlsWrapper} ${
+                extraControlsAlwaysVisible ? "" : styles.controlsHoverOnly
+              }`}
+            >
               <div className={styles.expandedControls}>
-                <button
-                  type="button"
-                  className={`${styles.iconButton} ${playbackOrderMode !== "in-order" ? styles.activeControl : ""}`}
-                  onClick={handleShuffleCycle}
-                  aria-label={
-                    playbackOrderMode === "repeat-one"
-                      ? "Loop current song"
-                      : playbackOrderMode === "shuffle"
-                        ? "Shuffle playback"
-                        : "Play in order"
-                  }
-                  title={
-                    playbackOrderMode === "repeat-one"
-                      ? "Loop current song"
-                      : playbackOrderMode === "shuffle"
-                        ? "Shuffle"
-                        : "In order"
-                  }
-                >
-                  {playbackOrderMode === "repeat-one" ? (
-                    <IconRepeat size={18} />
-                  ) : playbackOrderMode === "shuffle" ? (
-                    <IconArrowsShuffle size={18} />
-                  ) : (
-                    <IconRepeatOff size={18} />
-                  )}
-                </button>
-
                 <LyricsButton onToggle={onToggleLyrics} />
 
                 <button
