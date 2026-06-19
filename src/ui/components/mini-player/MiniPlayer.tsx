@@ -146,7 +146,7 @@ useEffect(() => {
     };
   }, []);
   const isPlaying = playerState.status === "playing";
-  const albumArt = playerState.artworkUrl;
+ // const albumArt = playerState.artworkUrl;
 
   const handleRestore = async () => {
     await win.hide();
