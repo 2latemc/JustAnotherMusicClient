@@ -8,7 +8,13 @@ import { logInternalWarn } from "../internal/logging";
 type WindowsMediaAction = "play" | "pause" | "next" | "previous";
 
 const usesNativeWindowsMediaSession =
-  isTauri() && navigator.userAgent.includes("Windows");
+  isTauri() && /Windows/i.test(navigator.userAgent);
+
+function getBrowserPlaybackState(status: PlayerState["status"]): MediaSessionPlaybackState {
+  if (status === "playing" || status === "loading") return "playing";
+  if (status === "paused") return "paused";
+  return "none";
+}
 
 export function useMediaSession(
   state: PlayerState,
@@ -56,6 +62,7 @@ export function useMediaSession(
     const handlers: Partial<Record<MediaSessionAction, MediaSessionActionHandler>> = {
       play: () => void controller.play(),
       pause: () => void controller.pause(),
+      stop: () => void controller.pause(),
       nexttrack: () => void controller.skipToNext(),
       previoustrack: () => void controller.skipToPrevious(),
       seekto: (details) => {
@@ -98,18 +105,18 @@ export function useMediaSession(
     if (usesNativeWindowsMediaSession || !("mediaSession" in navigator)) return;
 
     const track = state.currentTrack;
-    navigator.mediaSession.metadata = track
-      ? new MediaMetadata({
-          title: track.title,
-          artist: track.artist,
-          artwork: track.artworkUrl ? [{ src: track.artworkUrl }] : [],
-        })
-      : null;
-    navigator.mediaSession.playbackState = state.status === "playing"
-      ? "playing"
-      : state.status === "paused"
-        ? "paused"
-        : "none";
+    try {
+      navigator.mediaSession.metadata = track
+        ? new MediaMetadata({
+            title: track.title,
+            artist: track.artist,
+            artwork: track.artworkUrl ? [{ src: track.artworkUrl }] : [],
+          })
+        : null;
+      navigator.mediaSession.playbackState = getBrowserPlaybackState(state.status);
+    } catch {
+      // WebView media-session support varies by installed runtime version.
+    }
   }, [state.currentTrack, state.status]);
 
   useEffect(() => {
@@ -121,8 +128,8 @@ export function useMediaSession(
 
     const updatePosition = () => {
       const duration = controller.getDuration() || state.currentTrack?.durationSec || 0;
-      const position = controller.getCurrentTime();
-      if (duration > 0 && position >= 0 && position <= duration) {
+      const position = Math.min(duration, Math.max(0, controller.getCurrentTime()));
+      if (duration > 0) {
         try {
           navigator.mediaSession.setPositionState({
             duration,
@@ -138,5 +145,5 @@ export function useMediaSession(
     updatePosition();
     const intervalId = window.setInterval(updatePosition, 1000);
     return () => window.clearInterval(intervalId);
-  }, [controller, state.currentTrack]);
+  }, [controller, state.currentTrack, state.status]);
 }

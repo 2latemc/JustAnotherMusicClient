@@ -50,13 +50,17 @@ import {
   OnboardingWelcome,
   type OnboardingStep,
 } from "./components/Onboarding";
-import { isMacOS } from "./platform";
+import { isLinux, isMacOS, isWindows } from "./platform";
 
 import { emit, listen } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { currentMonitor } from "@tauri-apps/api/window";
+import { availableMonitors, currentMonitor, primaryMonitor } from "@tauri-apps/api/window";
 import { PhysicalPosition } from "@tauri-apps/api/dpi";
-import { getSavedMiniPlayerPosition, useMiniPlayerEnabled } from "./settings/miniPlayer";
+import {
+  getSavedMiniPlayerPosition,
+  saveMiniPlayerPosition,
+  useMiniPlayerEnabled,
+} from "./settings/miniPlayer";
 const restoredSession = loadAppSession();
 const LOADING_SCREEN_FADE_MS = 80;
 const ONBOARDING_COMPLETE_KEY = "yt-music-dock:onboarding-complete";
@@ -126,7 +130,9 @@ async function placeMiniPlayerAtBottomCenter(miniWin: WebviewWindow) {
     return;
   }
 
-  const monitor = await currentMonitor();
+  const monitor = await currentMonitor()
+    ?? await primaryMonitor()
+    ?? (await availableMonitors())[0];
   if (!monitor) return;
 
   const size = await miniWin.outerSize();
@@ -134,6 +140,7 @@ async function placeMiniPlayerAtBottomCenter(miniWin: WebviewWindow) {
   const y = monitor.position.y + monitor.size.height - size.height - MINI_PLAYER_BOTTOM_MARGIN;
 
   await miniWin.setPosition(new PhysicalPosition(x, y));
+  saveMiniPlayerPosition({ x, y });
 }
 
 function readLocalOnboardingComplete(): boolean {
@@ -1066,7 +1073,7 @@ useEffect(() => {
       if (miniWin) await miniWin.hide();
     };
 
-    const unlistenMinimize = await listen("window-minimized", async () => {
+    const unlistenBackgrounded = await listen("main-window-backgrounded", async () => {
       const miniWin = await WebviewWindow.getByLabel("mini-player");
       if (!miniWin) return;
 
@@ -1088,6 +1095,11 @@ useEffect(() => {
       }
 
       await miniWin.show();
+      if (isLinux) {
+        try {
+          await placeMiniPlayerAtBottomCenter(miniWin);
+        } catch (_) {}
+      }
       await miniWin.setFocus();
     });
 
@@ -1096,15 +1108,31 @@ useEffect(() => {
       miniPlayerRestoreSuppressUntilRef.current = Date.now() + 800;
       await hideMiniPlayer();
     });
+    const unlistenPositionChanged = await listen<{ x: number; y: number }>(
+      "mini-player:position-changed",
+      (event) => {
+        saveMiniPlayerPosition(event.payload);
+      },
+    );
+
+    const handleWindowBlur = () => {
+      void emit("main-window-backgrounded");
+    };
+
+    if (isWindows || isLinux) {
+      window.addEventListener("blur", handleWindowBlur);
+    }
 
     if (!miniPlayerEnabled) {
       await hideMiniPlayer();
     }
 
     return () => {
-      unlistenMinimize();
+      window.removeEventListener("blur", handleWindowBlur);
+      unlistenBackgrounded();
       unlistenFocus();
       unlistenRestoreMain();
+      unlistenPositionChanged();
     };
   };
 

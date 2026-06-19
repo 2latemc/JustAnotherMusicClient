@@ -1,6 +1,19 @@
 import { useSyncExternalStore } from "react";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { currentMonitor, PhysicalPosition } from "@tauri-apps/api/window";
+import {
+  availableMonitors,
+  currentMonitor,
+  PhysicalPosition,
+  primaryMonitor,
+} from "@tauri-apps/api/window";
+import {
+  hydrateLocalBooleanSetting,
+  hydrateLocalJsonSetting,
+  readLocalBooleanSetting,
+  readLocalJsonSetting,
+  writeLocalBooleanSetting,
+  writeLocalJsonSetting,
+} from "../../internal/durableLocalSetting";
 
 const STORAGE_KEY = "mini-player-enabled";
 const POSITION_STORAGE_KEY = "mini-player-position";
@@ -12,8 +25,17 @@ export interface MiniPlayerPosition {
   y: number;
 }
 
+function isMiniPlayerPosition(value: unknown): value is MiniPlayerPosition {
+  return (
+    typeof value === "object"
+    && value !== null
+    && Number.isFinite((value as MiniPlayerPosition).x)
+    && Number.isFinite((value as MiniPlayerPosition).y)
+  );
+}
+
 function readMiniPlayerEnabled() {
-  return localStorage.getItem(STORAGE_KEY) !== "false";
+  return readLocalBooleanSetting(STORAGE_KEY, true);
 }
 
 function subscribe(callback: () => void) {
@@ -27,8 +49,7 @@ function subscribe(callback: () => void) {
 }
 
 export function setMiniPlayerEnabled(enabled: boolean) {
-  localStorage.setItem(STORAGE_KEY, String(enabled));
-  window.dispatchEvent(new Event(CHANGE_EVENT));
+  writeLocalBooleanSetting(STORAGE_KEY, enabled, CHANGE_EVENT);
 }
 
 export function getMiniPlayerEnabled() {
@@ -36,23 +57,25 @@ export function getMiniPlayerEnabled() {
 }
 
 export function getSavedMiniPlayerPosition(): MiniPlayerPosition | null {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(POSITION_STORAGE_KEY) ?? "null") as MiniPlayerPosition | null;
-    if (!parsed || !Number.isFinite(parsed.x) || !Number.isFinite(parsed.y)) return null;
-
-    return parsed;
-  } catch {
-    return null;
-  }
+  return readLocalJsonSetting(POSITION_STORAGE_KEY, isMiniPlayerPosition);
 }
 
 export function saveMiniPlayerPosition(position: MiniPlayerPosition) {
-  localStorage.setItem(POSITION_STORAGE_KEY, JSON.stringify(position));
+  writeLocalJsonSetting(POSITION_STORAGE_KEY, position);
+}
+
+export async function hydrateMiniPlayerSettings() {
+  await Promise.all([
+    hydrateLocalBooleanSetting(STORAGE_KEY, true, CHANGE_EVENT),
+    hydrateLocalJsonSetting(POSITION_STORAGE_KEY, isMiniPlayerPosition),
+  ]);
 }
 
 export async function resetMiniPlayerPosition() {
   const miniWin = await WebviewWindow.getByLabel("mini-player");
-  const monitor = await currentMonitor();
+  const monitor = await currentMonitor()
+    ?? await primaryMonitor()
+    ?? (await availableMonitors())[0];
   if (!miniWin || !monitor) return;
 
   const size = await miniWin.outerSize();

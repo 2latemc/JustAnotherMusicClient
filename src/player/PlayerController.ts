@@ -102,6 +102,7 @@ export class PlayerController {
 
   restoreSession(session: PlayerSession): void {
     this.playTrackRequestId += 1;
+    const restoreRequestId = this.playTrackRequestId;
     this.audioEngine.stop();
     this.loadedTrackId = null;
     this.queue.set(
@@ -123,6 +124,9 @@ export class PlayerController {
       playbackOrderMode: this.playbackOrderMode,
     };
     this.emit();
+    if (session.currentTrack) {
+      void this.refreshRestoredTrackMetadata(session.currentTrack, restoreRequestId);
+    }
   }
 
   async loadTrack(track: Track): Promise<void> {
@@ -503,6 +507,45 @@ export class PlayerController {
     }
 
     this.queue.replaceAutomaticUpcoming(recommendations);
+  }
+
+  private async refreshRestoredTrackMetadata(track: Track, restoreRequestId: number): Promise<void> {
+    let freshTrack: Track;
+    try {
+      freshTrack = await this.dataSource.getTrack(track.id);
+    } catch (error) {
+      logInternalWarn("PlayerController.refreshRestoredTrackMetadata failed", {
+        trackId: track.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+
+    if (
+      restoreRequestId !== this.playTrackRequestId
+      || this.state.currentTrack?.id !== track.id
+    ) {
+      return;
+    }
+
+    const currentTrack = this.state.currentTrack;
+    const refreshedTrack: Track = {
+      ...freshTrack,
+      ...currentTrack,
+      durationSec: freshTrack.durationSec ?? currentTrack.durationSec,
+      artworkUrl: freshTrack.artworkUrl ?? currentTrack.artworkUrl,
+      artists: freshTrack.artists ?? currentTrack.artists,
+    };
+
+    if (
+      refreshedTrack.artworkUrl === currentTrack.artworkUrl
+      && refreshedTrack.durationSec === currentTrack.durationSec
+      && refreshedTrack.artists === currentTrack.artists
+    ) {
+      return;
+    }
+
+    this.setState({ currentTrack: refreshedTrack });
   }
 
   private async loadRadioQueue(seed: Track): Promise<Track | null> {

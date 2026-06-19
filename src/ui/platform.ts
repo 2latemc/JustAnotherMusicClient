@@ -4,6 +4,9 @@ export const isMacOS =
 export const isLinux =
   typeof navigator !== "undefined" && /Linux/.test(navigator.userAgent);
 
+export const isWindows =
+  typeof navigator !== "undefined" && /Windows NT/.test(navigator.userAgent);
+
 export const primaryModifierLabel = isMacOS ? "⌘" : "Ctrl";
 
 export function applyPlatformAttributes() {

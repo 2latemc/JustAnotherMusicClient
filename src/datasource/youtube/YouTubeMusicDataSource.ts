@@ -2839,7 +2839,7 @@ export class YouTubeMusicDataSource extends DataSource {
     const cacheKey = `youtube-music:track:v1:${trackId}`;
     const cached = await getCachedJson<Track>(cacheKey);
 
-    if (cached) {
+    if (cached?.artworkUrl) {
       globalThis.setTimeout(() => {
         void this.refreshTrack(trackId, cacheKey).catch((error) => {
           logInternalWarn("YouTubeMusicDataSource.getTrack background refresh failed", {
@@ -2849,6 +2849,18 @@ export class YouTubeMusicDataSource extends DataSource {
         });
       }, 0);
       return cached;
+    }
+
+    if (cached) {
+      try {
+        return await this.refreshTrack(trackId, cacheKey);
+      } catch (error) {
+        logInternalWarn("YouTubeMusicDataSource.getTrack missing-artwork refresh failed", {
+          trackId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return cached;
+      }
     }
 
     try {

@@ -1,18 +1,22 @@
 import { useSyncExternalStore } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { logInternalError } from "../../internal/logging";
+import {
+  hydrateLocalBooleanSetting,
+  readLocalBooleanSetting,
+  writeLocalBooleanSetting,
+} from "../../internal/durableLocalSetting";
 
 const WINDOWS_STYLE_STORAGE_KEY = "windows-style-window-controls";
 const NATIVE_CONTROLS_STORAGE_KEY = "native-window-controls";
 const CHANGE_EVENT = "window-controls-change";
 
 function readBooleanSetting(key: string) {
-  return localStorage.getItem(key) === "true";
+  return readLocalBooleanSetting(key, false);
 }
 
 function writeBooleanSetting(key: string, enabled: boolean) {
-  localStorage.setItem(key, String(enabled));
-  window.dispatchEvent(new Event(CHANGE_EVENT));
+  writeLocalBooleanSetting(key, enabled, CHANGE_EVENT);
 }
 
 function subscribe(callback: () => void) {
@@ -49,6 +53,18 @@ export async function applyNativeWindowControls(enabled = readNativeWindowContro
   } catch (error) {
     logInternalError("windowControls.applyNativeWindowControls failed", error);
   }
+}
+
+export async function hydrateWindowControlSettings() {
+  await Promise.all([
+    hydrateLocalBooleanSetting(WINDOWS_STYLE_STORAGE_KEY, false, CHANGE_EVENT),
+    hydrateLocalBooleanSetting(
+      NATIVE_CONTROLS_STORAGE_KEY,
+      false,
+      CHANGE_EVENT,
+      applyNativeWindowControls,
+    ),
+  ]);
 }
 
 export function useWindowsStyleWindowControls() {

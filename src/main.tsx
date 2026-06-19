@@ -3,8 +3,13 @@ import ReactDOM from "react-dom/client";
 import App from "./ui/App";
 import "./ui/styles/global.css";
 import { logInternalError, logInternalInfo } from "./internal/logging";
-import { applyPaperPcMode } from "./ui/settings/paperPcMode";
-import { applyNativeWindowControls } from "./ui/settings/windowControls";
+import { applyPaperPcMode, hydratePaperPcMode } from "./ui/settings/paperPcMode";
+import {
+  applyNativeWindowControls,
+  hydrateWindowControlSettings,
+} from "./ui/settings/windowControls";
+import { hydrateMiniPlayerSettings } from "./ui/settings/miniPlayer";
+import { hydratePlayerControlSettings } from "./ui/settings/playerControls";
 import { applyPlatformAttributes } from "./ui/platform";
 import { DiscordRpcService } from "./player/DiscordRPC";
 
@@ -12,6 +17,14 @@ logInternalInfo("main.bootstrap start");
 applyPlatformAttributes();
 applyPaperPcMode();
 void applyNativeWindowControls();
+void Promise.all([
+  hydratePaperPcMode(),
+  hydrateWindowControlSettings(),
+  hydrateMiniPlayerSettings(),
+  hydratePlayerControlSettings(),
+]).catch((error) => {
+  logInternalError("settings hydration failed", error);
+});
 
 // Initialize Discord RPC (non-blocking)
 logInternalInfo("[Discord RPC] Initializing Discord RPC service");

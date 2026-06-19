@@ -6,7 +6,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { logInternalError, logInternalInfo, logInternalWarn } from "../../internal/logging";
 import { MusicTabs } from "./MusicTabs";
 import type { Tab } from "../types/tab";
-import { isLinux } from "../platform";
 import {
   useNativeWindowControls,
   useWindowsStyleWindowControls,
@@ -53,9 +52,8 @@ export function TitleBar({
   const homeButtonClasses = useMemo(() => [
     styles.homeButton,
     isHomeActive ? styles.homeButtonActive : "",
-    isLinux ? styles.homeButtonLinux : "",
     hideHomeText ? styles.homeButtonIconOnly : "",
-  ].filter(Boolean).join(" "), [isHomeActive, isLinux, hideHomeText]);
+  ].filter(Boolean).join(" "), [isHomeActive, hideHomeText]);
 
   const windowControlsClasses = [
     styles.windowControls,
@@ -109,7 +107,7 @@ export function TitleBar({
           onNavigateHome();
         }}
         onPointerDown={(event) => {
-          if (isLinux || event.button !== 0) return;
+          if (event.button !== 0) return;
           suppressHomeClickRef.current = false;
           homePointerRef.current = {
             pointerId: event.pointerId,
@@ -119,7 +117,6 @@ export function TitleBar({
           event.currentTarget.setPointerCapture(event.pointerId);
         }}
         onPointerMove={(event) => {
-          if (isLinux) return;
           const pointer = homePointerRef.current;
           if (!pointer || pointer.pointerId !== event.pointerId) return;
 
@@ -161,10 +158,9 @@ export function TitleBar({
 
       <div
         className={styles.dragArea}
-        data-tauri-drag-region={isLinux ? "" : undefined}
         aria-label="Drag window"
         onPointerDown={(event) => {
-          if (isLinux || event.button !== 0) return;
+          if (event.button !== 0) return;
           void startWindowDrag();
         }}
       />

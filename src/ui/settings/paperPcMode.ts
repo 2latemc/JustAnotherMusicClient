@@ -1,11 +1,16 @@
 import { useSyncExternalStore } from "react";
 import { isLinux } from "../platform";
+import {
+  hydrateLocalBooleanSetting,
+  readLocalBooleanSetting,
+  writeLocalBooleanSetting,
+} from "../../internal/durableLocalSetting";
 
 const STORAGE_KEY = "paper-pc-mode";
 const CHANGE_EVENT = "paper-pc-mode-change";
 
 function readPaperPcMode() {
-  return localStorage.getItem(STORAGE_KEY) === "true";
+  return readLocalBooleanSetting(STORAGE_KEY, false);
 }
 
 function subscribe(callback: () => void) {
@@ -22,8 +27,12 @@ export function applyPaperPcMode(enabled = readPaperPcMode()) {
   document.documentElement.toggleAttribute("data-paper-pc", enabled);
 }
 
+export async function hydratePaperPcMode() {
+  await hydrateLocalBooleanSetting(STORAGE_KEY, false, CHANGE_EVENT, applyPaperPcMode);
+}
+
 export function setPaperPcMode(enabled: boolean) {
-  localStorage.setItem(STORAGE_KEY, String(enabled));
+  writeLocalBooleanSetting(STORAGE_KEY, enabled, CHANGE_EVENT);
 
   if (isLinux) {
     window.location.reload();

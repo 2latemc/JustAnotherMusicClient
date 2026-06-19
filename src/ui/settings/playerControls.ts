@@ -1,10 +1,15 @@
 import { useSyncExternalStore } from "react";
+import {
+  hydrateLocalBooleanSetting,
+  readLocalBooleanSetting,
+  writeLocalBooleanSetting,
+} from "../../internal/durableLocalSetting";
 
 const EXTRA_CONTROLS_ALWAYS_VISIBLE_STORAGE_KEY = "extra-player-controls-always-visible";
 const CHANGE_EVENT = "player-controls-change";
 
 function readExtraControlsAlwaysVisible() {
-  return localStorage.getItem(EXTRA_CONTROLS_ALWAYS_VISIBLE_STORAGE_KEY) !== "false";
+  return readLocalBooleanSetting(EXTRA_CONTROLS_ALWAYS_VISIBLE_STORAGE_KEY, true);
 }
 
 function subscribe(callback: () => void) {
@@ -18,8 +23,11 @@ function subscribe(callback: () => void) {
 }
 
 export function setExtraPlayerControlsAlwaysVisible(enabled: boolean) {
-  localStorage.setItem(EXTRA_CONTROLS_ALWAYS_VISIBLE_STORAGE_KEY, String(enabled));
-  window.dispatchEvent(new Event(CHANGE_EVENT));
+  writeLocalBooleanSetting(EXTRA_CONTROLS_ALWAYS_VISIBLE_STORAGE_KEY, enabled, CHANGE_EVENT);
+}
+
+export async function hydratePlayerControlSettings() {
+  await hydrateLocalBooleanSetting(EXTRA_CONTROLS_ALWAYS_VISIBLE_STORAGE_KEY, true, CHANGE_EVENT);
 }
 
 export function useExtraPlayerControlsAlwaysVisible() {

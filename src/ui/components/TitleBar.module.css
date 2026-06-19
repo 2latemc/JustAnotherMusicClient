@@ -93,11 +93,6 @@
   cursor: grabbing;
 }
 
-.homeButtonLinux,
-.homeButtonLinux:active {
-  cursor: pointer;
-}
-
 .homeButton:hover::before {
   background:
     linear-gradient(180deg, rgb(255 255 255 / 7%), transparent),

@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type FocusEvent,
+  type MouseEvent,
+} from "react";
 import { emit, listen } from "@tauri-apps/api/event";
 import { cursorPosition, getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -11,6 +18,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { saveMiniPlayerPosition } from "../../settings/miniPlayer";
+import { isLinux, isMacOS } from "../../platform";
 import { TrackArtwork } from "../TrackArtwork";
 import styles from "./MiniPlayer.module.css";
 
@@ -28,10 +36,12 @@ interface TimeSync {
 
 const win = getCurrentWindow();
 const PILL_WIDTH = 160;
-const BOTTOM_PILL_HEIGHT = 60;
-const TOP_PILL_HEIGHT = 44;
-const GAP = 6;
+const BOTTOM_PILL_HEIGHT = 40;
+const TOP_PILL_HEIGHT = 28;
+const GAP = 2;
 const RIGHT_MOUSE_BUTTON = 2;
+const LEFT_MOUSE_BUTTON = 0;
+const INTERACTIVE_SELECTOR = "button, input, a, [role='button']";
 
 export default function MiniPlayer() {
   const [playerState, setPlayerState] = useState<PlayerSync>({
@@ -46,10 +56,36 @@ export default function MiniPlayer() {
   const [cachedArtwork, setCachedArtwork] = useState<string | null>(null);
   const expandedRef = useRef(false);
   const dragTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const macAlbumDragActiveRef = useRef(false);
+  const macAlbumDragMovedRef = useRef(false);
+  const suppressNextAlbumArtClickRef = useRef(false);
+
+  const setIgnoreCursorEventsWhenReady = async (ignore: boolean) => {
+    if (isLinux) return;
+
+    await win.setIgnoreCursorEvents(ignore);
+  };
 
   const setExpandedBoth = (value: boolean) => {
     expandedRef.current = value;
     setExpanded(value);
+  };
+
+  const saveCurrentPosition = async () => {
+    const position = await win.outerPosition();
+    const nextPosition = { x: position.x, y: position.y };
+    saveMiniPlayerPosition(nextPosition);
+    await emit("mini-player:position-changed", nextPosition);
+  };
+
+  const saveCurrentPositionSoon = () => {
+    window.setTimeout(() => {
+      void saveCurrentPosition();
+    }, 120);
+    window.setTimeout(() => {
+      void saveCurrentPosition();
+    }, 500);
   };
 
   useEffect(() => {
@@ -94,9 +130,25 @@ export default function MiniPlayer() {
   }, []);
 
   useEffect(() => {
-    void win.setIgnoreCursorEvents(true);
+    const setup = async () => {
+      const unlisten = await win.onMoved(({ payload }) => {
+        const nextPosition = { x: payload.x, y: payload.y };
+        saveMiniPlayerPosition(nextPosition);
+        void emit("mini-player:position-changed", nextPosition);
+      });
+
+      return unlisten;
+    };
+
+    const cleanup = setup();
+    return () => { cleanup.then((unlisten) => unlisten()); };
+  }, []);
+
+  useEffect(() => {
+    if (isMacOS || isLinux) return;
 
     let isOver = false;
+    let hasEnabledPassThrough = false;
     let running = true;
     let timer: ReturnType<typeof setTimeout>;
 
@@ -104,6 +156,11 @@ export default function MiniPlayer() {
       if (!running) return;
 
       try {
+        if (!hasEnabledPassThrough) {
+          await setIgnoreCursorEventsWhenReady(true);
+          hasEnabledPassThrough = true;
+        }
+
         const cursor = await cursorPosition();
         const position = await win.outerPosition();
         const size = await win.outerSize();
@@ -122,11 +179,11 @@ export default function MiniPlayer() {
 
         if (over && !isOver) {
           isOver = true;
-          await win.setIgnoreCursorEvents(false);
+          await setIgnoreCursorEventsWhenReady(false);
           setExpandedBoth(true);
         } else if (!over && isOver) {
           isOver = false;
-          await win.setIgnoreCursorEvents(true);
+          await setIgnoreCursorEventsWhenReady(true);
           setExpandedBoth(false);
         }
       } catch (_) {}
@@ -138,6 +195,31 @@ export default function MiniPlayer() {
     return () => {
       running = false;
       clearTimeout(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isMacOS && !isLinux) return;
+
+    const collapse = () => setExpandedBoth(false);
+
+    window.addEventListener("blur", collapse);
+    document.addEventListener("visibilitychange", collapse);
+
+    const setup = async () => {
+      const unlistenFocus = await win.onFocusChanged(({ payload: focused }) => {
+        if (!focused) collapse();
+      });
+      return () => {
+        unlistenFocus();
+      };
+    };
+
+    const cleanup = setup();
+    return () => {
+      window.removeEventListener("blur", collapse);
+      document.removeEventListener("visibilitychange", collapse);
+      void cleanup.then((unlisten) => unlisten());
     };
   }, []);
 
@@ -153,9 +235,109 @@ export default function MiniPlayer() {
     }
   };
 
-  const handleAlbumArtMouseDown = (event: MouseEvent<HTMLButtonElement>) => {
+  const stopAlbumArtDrag = async (restoreIfClick: boolean) => {
+    if (!macAlbumDragActiveRef.current) return;
+
+    macAlbumDragActiveRef.current = false;
+    if (dragTimerRef.current) {
+      clearInterval(dragTimerRef.current);
+      dragTimerRef.current = null;
+    }
+
+    setIsDragging(false);
+    try {
+      await saveCurrentPosition();
+    } catch (_) {}
+    try {
+      await win.setCursorIcon("grab");
+    } catch (_) {}
+
+    const shouldRestore = restoreIfClick && !macAlbumDragMovedRef.current;
+    macAlbumDragMovedRef.current = false;
+    if (shouldRestore) {
+      await handleRestore();
+    }
+  };
+
+  const handleAlbumArtMouseDown = async (event: MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
     event.currentTarget.blur();
+
+    if (isLinux && event.button === LEFT_MOUSE_BUTTON) {
+      event.stopPropagation();
+      suppressNextAlbumArtClickRef.current = true;
+      setIsDragging(true);
+
+      const stopNativeDrag = () => {
+        setIsDragging(false);
+        saveCurrentPositionSoon();
+      };
+      document.addEventListener("mouseup", stopNativeDrag, { once: true });
+      window.addEventListener("blur", stopNativeDrag, { once: true });
+
+      try {
+        await win.startDragging();
+        saveCurrentPositionSoon();
+      } catch (_) {}
+      return;
+    }
+
+    if (!isMacOS || event.button !== LEFT_MOUSE_BUTTON) return;
+
+    event.stopPropagation();
+    suppressNextAlbumArtClickRef.current = true;
+
+    if (dragTimerRef.current) {
+      clearInterval(dragTimerRef.current);
+      dragTimerRef.current = null;
+    }
+
+    const startCursor = await cursorPosition();
+    const startPosition = await win.outerPosition();
+    macAlbumDragActiveRef.current = true;
+    macAlbumDragMovedRef.current = false;
+    setIsDragging(true);
+    try {
+      await win.setCursorIcon("grabbing");
+    } catch (_) {}
+
+    const stopDragFromDocument = (upEvent: globalThis.MouseEvent) => {
+      if (upEvent.button === LEFT_MOUSE_BUTTON) void stopAlbumArtDrag(true);
+    };
+    const stopDragOnBlur = () => {
+      void stopAlbumArtDrag(false);
+    };
+
+    document.addEventListener("mouseup", stopDragFromDocument, { once: true });
+    window.addEventListener("blur", stopDragOnBlur, { once: true });
+
+    dragTimerRef.current = setInterval(() => {
+      void (async () => {
+        if (!macAlbumDragActiveRef.current) return;
+
+        const cursor = await cursorPosition();
+        const deltaX = cursor.x - startCursor.x;
+        const deltaY = cursor.y - startCursor.y;
+        if (Math.hypot(deltaX, deltaY) > 3) {
+          macAlbumDragMovedRef.current = true;
+        }
+
+        await win.setPosition(new PhysicalPosition(
+          startPosition.x + deltaX,
+          startPosition.y + deltaY,
+        ));
+      })();
+    }, 16);
+  };
+
+  const handleAlbumArtClick = (event: MouseEvent<HTMLButtonElement>) => {
+    if (suppressNextAlbumArtClickRef.current) {
+      suppressNextAlbumArtClickRef.current = false;
+      event.preventDefault();
+      return;
+    }
+
+    void handleRestore();
   };
 
   const handleClose = async () => {
@@ -170,16 +352,37 @@ export default function MiniPlayer() {
 
     setIsDragging(false);
     try {
-      const position = await win.outerPosition();
-      saveMiniPlayerPosition({ x: position.x, y: position.y });
+      await saveCurrentPosition();
     } catch (_) {}
     try {
       await win.setCursorIcon("grab");
     } catch (_) {}
-    await win.setIgnoreCursorEvents(false);
+    await setIgnoreCursorEventsWhenReady(false);
   };
 
   const handleContainerMouseDown = async (event: MouseEvent<HTMLDivElement>) => {
+    const isInteractiveTarget = event.target instanceof Element
+      && Boolean(event.target.closest(INTERACTIVE_SELECTOR));
+
+    if (isMacOS || isLinux) {
+      if (event.button !== LEFT_MOUSE_BUTTON || isInteractiveTarget) return;
+
+      event.preventDefault();
+      setIsDragging(true);
+      const stopNativeDrag = () => {
+        setIsDragging(false);
+        saveCurrentPositionSoon();
+      };
+      document.addEventListener("mouseup", stopNativeDrag, { once: true });
+      window.addEventListener("blur", stopNativeDrag, { once: true });
+
+      try {
+        await win.startDragging();
+        saveCurrentPositionSoon();
+      } catch (_) {}
+      return;
+    }
+
     if (event.button !== RIGHT_MOUSE_BUTTON) return;
 
     event.preventDefault();
@@ -197,7 +400,7 @@ export default function MiniPlayer() {
     try {
       await win.setCursorIcon("grabbing");
     } catch (_) {}
-    await win.setIgnoreCursorEvents(false);
+    await setIgnoreCursorEventsWhenReady(false);
 
     const stopDragFromDocument = (upEvent: globalThis.MouseEvent) => {
       if (upEvent.button === RIGHT_MOUSE_BUTTON) void stopRightButtonDrag();
@@ -220,13 +423,35 @@ export default function MiniPlayer() {
     }, 16);
   };
 
+  const handleMacPointerEnter = () => {
+    if (isMacOS || isLinux) setExpandedBoth(true);
+  };
+
+  const handleMacPointerLeave = (event: MouseEvent<HTMLElement>) => {
+    if (!isMacOS && !isLinux) return;
+    const nextTarget = event.relatedTarget;
+    if (nextTarget instanceof Node && wrapperRef.current?.contains(nextTarget)) return;
+    setExpandedBoth(false);
+  };
+
+  const handleMacFocusOut = (event: FocusEvent<HTMLDivElement>) => {
+    if (!isMacOS && !isLinux) return;
+    const nextTarget = event.relatedTarget;
+    if (nextTarget instanceof Node && wrapperRef.current?.contains(nextTarget)) return;
+    setExpandedBoth(false);
+  };
+
   const isPlaying = playerState.status === "playing";
   const isLoading = playerState.status === "loading";
   const artworkUrl = playerState.artworkUrl ?? cachedArtwork;
 
   return (
-    <div className={styles.wrapper}>
-      <div className={`${styles.expandedPill} ${expanded ? styles.expandedPillVisible : ""}`}>
+    <div ref={wrapperRef} className={styles.wrapper} onBlur={handleMacFocusOut}>
+      <div
+        className={`${styles.expandedPill} ${expanded ? styles.expandedPillVisible : ""}`}
+        onMouseEnter={handleMacPointerEnter}
+        onMouseLeave={handleMacPointerLeave}
+      >
         <input
           type="range"
           min={0}
@@ -249,6 +474,8 @@ export default function MiniPlayer() {
           expanded ? styles.miniContainerExpanded : "",
           isDragging ? styles.dragging : "",
         ].filter(Boolean).join(" ")}
+        onMouseEnter={handleMacPointerEnter}
+        onMouseLeave={handleMacPointerLeave}
         onMouseDown={(event) => void handleContainerMouseDown(event)}
         onMouseUp={(event) => {
           if (event.button === RIGHT_MOUSE_BUTTON) void stopRightButtonDrag();
@@ -257,8 +484,8 @@ export default function MiniPlayer() {
       >
         <button
           className={styles.albumArt}
-          onMouseDown={handleAlbumArtMouseDown}
-          onClick={handleRestore}
+          onMouseDown={(event) => void handleAlbumArtMouseDown(event)}
+          onClick={handleAlbumArtClick}
           aria-label="Restore"
         >
           <TrackArtwork
