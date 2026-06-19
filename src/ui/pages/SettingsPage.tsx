@@ -6,6 +6,7 @@ import {
   IconLogin,
   IconLogout,
   IconLeaf,
+  IconPlayerPlay,
   IconRocket,
   IconRefresh,
   IconStar,
@@ -33,6 +34,10 @@ import {
   getAutostartEnabled,
   setAutostartEnabled,
 } from "../settings/autostart";
+import {
+  setExtraPlayerControlsAlwaysVisible,
+  useExtraPlayerControlsAlwaysVisible,
+} from "../settings/playerControls";
 import { setPaperPcMode, usePaperPcMode } from "../settings/paperPcMode";
 import {
   setNativeWindowControls,
@@ -80,6 +85,7 @@ export function SettingsPage({
   const [miniPlayerResetting, setMiniPlayerResetting] = useState(false);
   const paperPcMode = usePaperPcMode();
   const miniPlayerEnabled = useMiniPlayerEnabled();
+  const extraPlayerControlsAlwaysVisible = useExtraPlayerControlsAlwaysVisible();
   const windowsStyleWindowControls = useWindowsStyleWindowControls();
   const nativeWindowControls = useNativeWindowControls();
   const account = libraryState.library?.account;
@@ -448,6 +454,30 @@ export function SettingsPage({
             type="checkbox"
             checked={nativeWindowControls}
             onChange={(event) => setNativeWindowControls(event.target.checked)}
+          />
+          <span className={styles.toggle} aria-hidden="true" />
+        </label>
+      </section>
+
+      <section className={styles.card} aria-labelledby="player-controls-settings-title">
+        <div className={styles.cardHeader}>
+          <div>
+            <h2 id="player-controls-settings-title">Player controls</h2>
+            <p>Choose how the lyrics and queue buttons appear beside volume.</p>
+          </div>
+          <IconPlayerPlay className={styles.cardIcon} size={22} />
+        </div>
+
+        <label className={styles.toggleRow}>
+          <span className={styles.toggleDescription}>
+            <strong>Always show extra controls</strong>
+            <span>Keep lyrics and queue visible instead of showing them only on hover.</span>
+          </span>
+          <input
+            className={styles.toggleInput}
+            type="checkbox"
+            checked={extraPlayerControlsAlwaysVisible}
+            onChange={(event) => setExtraPlayerControlsAlwaysVisible(event.target.checked)}
           />
           <span className={styles.toggle} aria-hidden="true" />
         </label>

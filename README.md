@@ -71,7 +71,7 @@ Download the **newest available installer** from the [latest release](https://gi
 </a>
 
 ## Roadmap 📌
-
+- Website with easy download buttons!
 - Last.fm integration
 - **Better lyrics consistency** (some songs still don't have them)
 - Raycast support with app specific URLs

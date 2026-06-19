@@ -24,6 +24,17 @@ type NativeAudioPayload = {
   mimeType: string;
 };
 
+type MusicColumn = {
+  title?: {
+    toString(): string;
+    runs?: Array<{
+      text?: string;
+      endpoint?: unknown;
+      navigationEndpoint?: unknown;
+    }>;
+  };
+};
+
 function decodeBase64(base64: string): Uint8Array {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
@@ -64,12 +75,8 @@ type MusicItem = {
   };
   subtitle_badges?: Array<{ label?: string }>;
   end_icon_type?: string;
-  fixed_columns?: Array<{
-    title?: { toString(): string; runs?: Array<{ text?: string }> };
-  }>;
-  flex_columns?: Array<{
-    title?: { toString(): string; runs?: Array<{ text?: string }> };
-  }>;
+  fixed_columns?: MusicColumn[];
+  flex_columns?: MusicColumn[];
 };
 
 type ParsedMusicResponse = {
@@ -531,6 +538,62 @@ export class YouTubeMusicDataSource extends DataSource {
       ?? texts.find((value) => /^\s*\d+(?:[.,]\d+)?\s*[KMB]\s*$/i.test(value));
   }
 
+  private getColumnText(column: MusicColumn): string | undefined {
+    return column.title?.toString()
+      || column.title?.runs?.map((run) => run.text).filter(Boolean).join("");
+  }
+
+  private isArtistColumn(column: MusicColumn): boolean {
+    return column.title?.runs?.some((run) => {
+      const browseId = this.findBrowseId(run.endpoint) ?? this.findBrowseId(run.navigationEndpoint);
+      return browseId?.startsWith("UC");
+    }) ?? false;
+  }
+
+  private isAlbumColumn(column: MusicColumn): boolean {
+    return column.title?.runs?.some((run) => {
+      const browseId = this.findBrowseId(run.endpoint) ?? this.findBrowseId(run.navigationEndpoint);
+      return Boolean(browseId && !browseId.startsWith("UC"));
+    }) ?? false;
+  }
+
+  private getTrackAlbumName(item: MusicItem): string | undefined {
+    const title = this.getTitle(item);
+    const artistNames = new Set(
+      [
+        this.getArtistName(item),
+        ...(this.getArtists(item)?.map((artist) => artist.name) ?? []),
+      ]
+        .flatMap((value) => value.split(","))
+        .map((value) => value.trim().toLocaleLowerCase())
+        .filter(Boolean),
+    );
+
+    const linkedAlbum = (item.flex_columns ?? [])
+      .slice(1)
+      .find((column) => this.isAlbumColumn(column));
+    const linkedAlbumText = linkedAlbum ? this.getColumnText(linkedAlbum)?.trim() : undefined;
+    if (linkedAlbumText) return linkedAlbumText;
+
+    const candidates = [
+      ...(item.flex_columns ?? [])
+        .slice(1)
+        .filter((column) => !this.isArtistColumn(column))
+        .map((column) => this.getColumnText(column)),
+      ...(item.fixed_columns ?? []).map((column) => this.getColumnText(column)),
+    ]
+      .map((value) => value?.trim())
+      .filter((value): value is string => Boolean(value));
+
+    return candidates.find((value) => {
+      const normalized = value.toLocaleLowerCase();
+      return normalized !== title?.toLocaleLowerCase()
+        && !artistNames.has(normalized)
+        && !/^\d{1,2}:\d{2}(?::\d{2})?$/.test(value)
+        && !/\bviews?\b|\bplays?\b/i.test(value);
+    });
+  }
+
   private getTitle(item: MusicItem): string | null {
     if (typeof item.title === "string") return item.title;
     const title = item.title?.toString();
@@ -607,6 +670,7 @@ export class YouTubeMusicDataSource extends DataSource {
       title,
       artist: this.getArtistName(item),
       artists: this.getArtists(item),
+      album: this.getTrackAlbumName(item),
       artworkUrl: this.getArtwork(item) ?? getVideoArtworkFallback(id),
       playlistItemId: this.getPlaylistItemId(item),
       viewCount: this.parseViewCount(viewCountText),

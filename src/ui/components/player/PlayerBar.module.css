@@ -120,7 +120,7 @@
   align-items: center;
   position: absolute;
   left: 16px;
-  right: calc(50% + 82px);
+  right: calc(50% + 104px);
   min-width: 0;
   overflow: hidden;
 }
@@ -139,36 +139,54 @@
   flex-shrink: 0;
   position: absolute;
   right: 16px;
-  gap: 6px;
+  gap: 8px;
 }
 
 .volumeControlsWrapper {
- 
+  --extra-control-gap: 8px;
+
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  justify-items: center;
+  gap: var(--extra-control-gap);
+}
 
+.controlsHoverOnly::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 100%;
+  width: calc((36px * 2) + (var(--extra-control-gap) * 2));
+  height: 52px;
+  transform: translateY(-50%);
 }
 
 .expandedControls {
-  
-  
-
- 
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  transform: translate(0, -50%) scale(1);
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding-right: 6px;
- 
-  pointer-events: none;
+  gap: var(--extra-control-gap);
+  padding-right: var(--extra-control-gap);
+  opacity: 1;
+  pointer-events: auto;
   transition: opacity 180ms ease, transform 180ms ease;
   white-space: nowrap;
+  z-index: 1;
 }
 
-.volumeControlsWrapper:hover .expandedControls,
-.volumeControlsWrapper:focus-within .expandedControls {
-  
+.controlsHoverOnly .expandedControls {
+  opacity: 0;
+  transform: translate(14px, -50%) scale(0.92);
+  pointer-events: none;
+}
+
+.controlsHoverOnly:hover .expandedControls,
+.controlsHoverOnly:focus-within .expandedControls {
+  opacity: 1;
+  transform: translate(0, -50%) scale(1);
   pointer-events: auto;
   
 }
@@ -215,7 +233,7 @@
 
   .leftSection {
     left: 12px;
-    right: calc(50% + 76px);
+    right: calc(50% + 98px);
   }
 }
 
@@ -247,7 +265,7 @@
 
   .leftSection {
     left: 8px;
-    right: calc(50% + 72px);
+    right: calc(50% + 94px);
   }
 }
 

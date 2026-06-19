@@ -6,8 +6,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const DISCORD_CLIENT_ID: &str = "1515682467154100344";
 const GITHUB_REPO: &str = "https://github.com/2latemc/JustAnotherMusicClient";
-const PRIVACY_POLICY: &str = "https://github.com/2latemc/JustAnotherMusicClient/blob/main/DISCORD_PRIVACY_POLICY.md";
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DiscordPresenceData {
     pub title: String,
@@ -46,7 +44,7 @@ impl DiscordRpcManager {
                     return Err(format!("Failed to connect to Discord: {}", e));
                 }
                 *client_lock = Some(client);
-                let mut connected = self.connected.lock().unwrap();
+                let mut connected = self.connected.lock().map_err(|e| e.to_string())?;
                 *connected = true;
                 Ok(())
             }
@@ -57,7 +55,7 @@ impl DiscordRpcManager {
     /// Update Discord presence with current track info
     pub fn update_presence(&self, data: DiscordPresenceData) -> Result<(), String> {
         // Ensure connection exists
-        if !*self.connected.lock().unwrap() {
+        if !*self.connected.lock().map_err(|e| e.to_string())? {
             self.connect()?;
         }
 
@@ -111,7 +109,10 @@ impl DiscordRpcManager {
         // Set the activity
         if let Err(e) = client.set_activity(activity) {
             eprintln!("[Discord RPC] Failed to set activity: {}", e);
-            // Don't fail entirely, might reconnect next time
+            *client_lock = None;
+            if let Ok(mut connected) = self.connected.lock() {
+                *connected = false;
+            }
         }
 
         Ok(())
@@ -119,7 +120,7 @@ impl DiscordRpcManager {
 
     /// Clear presence (show idle)
     pub fn clear_presence(&self) -> Result<(), String> {
-        if !*self.connected.lock().unwrap() {
+        if !*self.connected.lock().map_err(|e| e.to_string())? {
             return Ok(());
         }
 
@@ -128,6 +129,10 @@ impl DiscordRpcManager {
 
         if let Err(e) = client.clear_activity() {
             eprintln!("[Discord RPC] Failed to clear activity: {}", e);
+            *client_lock = None;
+            if let Ok(mut connected) = self.connected.lock() {
+                *connected = false;
+            }
         }
 
         Ok(())
