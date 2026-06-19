@@ -1,31 +1,31 @@
 {
-  "version": "1.2.41",
+  "version": "1.2.4",
   "notes": "",
-  "pub_date": "2026-06-17T15:22:57.888Z",
+  "pub_date": "2026-06-19T19:11:09.024Z",
   "platforms": {
     "linux-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRelk1K0tSZjhBMDNVbkVhNEhHYjk4RUVaTGJjVWJ0RnNMYnY0cXRkZjVEYjJCczdJd3F3dkNtSkdUdFRUZlNFRzcwd3RpOXoweGJmQ2pxTU1nYU9DelF0c0VuMFpaeFE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxNzA5NjU3CWZpbGU6SnVzdCBBbm90aGVyIE11c2ljIENsaWVudF8xLjIuNDFfYW1kNjQuQXBwSW1hZ2UKaWRtejVvQU1ST1V0cTdqd2dtSmU3dk9Ca0pvZFl1MmZBWUxQai93SkxzTUZQaHlwbk1XYjU5SFpncGxxZEkxUkF3bFpoQ2dNL2p2RE5TNkRSZDVyQ3c9PQo=",
-      "url": "https://github.com/2latemc/JustAnotherMusicClient/releases/download/v1.2.41/Just.Another.Music.Client_1.2.41_amd64.AppImage"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRelk1K0tSZjhBMDkzV3JQZjZGakY2ejArWTR3dG5MS1ArSm9NcXZXZis4b2NSTE9RM1QzcmV1UGVxVTRJVm4zTzRwTlZlNjFpRXlaSmxRSk01ejN0WEpqbEFycGlKS3dBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxODk2MjA5CWZpbGU6SnVzdCBBbm90aGVyIE11c2ljIENsaWVudF8xLjIuNF9hbWQ2NC5BcHBJbWFnZQpiY0NtajNoQmYzZlhLOEVDb05WWjdGeUR2S0xPd0NLNStTalRybVpCR3F0YXlWSE9veUxaSzVQYm9UVk1Ia244Yk96djAxMTZJTXF5N2pWVENibGNCZz09Cg==",
+      "url": "https://github.com/2latemc/JustAnotherMusicClient/releases/download/v1.2.4/Just.Another.Music.Client_1.2.4_amd64.AppImage"
     },
     "linux-x86_64-appimage": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRelk1K0tSZjhBMDNVbkVhNEhHYjk4RUVaTGJjVWJ0RnNMYnY0cXRkZjVEYjJCczdJd3F3dkNtSkdUdFRUZlNFRzcwd3RpOXoweGJmQ2pxTU1nYU9DelF0c0VuMFpaeFE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxNzA5NjU3CWZpbGU6SnVzdCBBbm90aGVyIE11c2ljIENsaWVudF8xLjIuNDFfYW1kNjQuQXBwSW1hZ2UKaWRtejVvQU1ST1V0cTdqd2dtSmU3dk9Ca0pvZFl1MmZBWUxQai93SkxzTUZQaHlwbk1XYjU5SFpncGxxZEkxUkF3bFpoQ2dNL2p2RE5TNkRSZDVyQ3c9PQo=",
-      "url": "https://github.com/2latemc/JustAnotherMusicClient/releases/download/v1.2.41/Just.Another.Music.Client_1.2.41_amd64.AppImage"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRelk1K0tSZjhBMDkzV3JQZjZGakY2ejArWTR3dG5MS1ArSm9NcXZXZis4b2NSTE9RM1QzcmV1UGVxVTRJVm4zTzRwTlZlNjFpRXlaSmxRSk01ejN0WEpqbEFycGlKS3dBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxODk2MjA5CWZpbGU6SnVzdCBBbm90aGVyIE11c2ljIENsaWVudF8xLjIuNF9hbWQ2NC5BcHBJbWFnZQpiY0NtajNoQmYzZlhLOEVDb05WWjdGeUR2S0xPd0NLNStTalRybVpCR3F0YXlWSE9veUxaSzVQYm9UVk1Ia244Yk96djAxMTZJTXF5N2pWVENibGNCZz09Cg==",
+      "url": "https://github.com/2latemc/JustAnotherMusicClient/releases/download/v1.2.4/Just.Another.Music.Client_1.2.4_amd64.AppImage"
     },
     "linux-x86_64-deb": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRelk1K0tSZjhBMHc4dWYzQzRPNEhwSnRhSXpFNnIrMVhTZ2ErdHVaS0RuYTNZQnVwMjFKYitiL2NvRGZYS1Awc3l3SGlrK3ZaRmsvMnN5aWtTSHQ0RzFYZWJLNUVuU1FjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxNzA5NjU3CWZpbGU6SnVzdCBBbm90aGVyIE11c2ljIENsaWVudF8xLjIuNDFfYW1kNjQuZGViCmJRdVlQQjVXaUxxYmpUMTErcEh5YzY3UHB1eVlVc002eG9DWndzdXdCdWo1cXlxclhpQittZm5POVRhMkZDM012M3B0Qmd6SWlERDU1UW5reFFkeUN3PT0K",
-      "url": "https://github.com/2latemc/JustAnotherMusicClient/releases/download/v1.2.41/Just.Another.Music.Client_1.2.41_amd64.deb"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRelk1K0tSZjhBMDBSM2s0K3dXTkN6Nm5xdDFtNVJZWTgvQy9Qd3hXY1VNZGFnS2JMYXpSdWpMOERKOGRXcXhra3V6MWJiYW1ZU2lSNUduY2M2QUdSOXBUVFJMSnlhQVFFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxODk2MjA5CWZpbGU6SnVzdCBBbm90aGVyIE11c2ljIENsaWVudF8xLjIuNF9hbWQ2NC5kZWIKZHF0R1NjS25WN3pGcVNyb2J5TDNJcGovTnYwYmlUTHpQTXlwa1Ayc3I0S2ZXV1pxaXBqWlgxL29vLzNtVDV4SHFvY25HT1I5WjRENlZpUkJQckNiREE9PQo=",
+      "url": "https://github.com/2latemc/JustAnotherMusicClient/releases/download/v1.2.4/Just.Another.Music.Client_1.2.4_amd64.deb"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRelk1K0tSZjhBMDRDVHpVV3ZELytCQ1doTnNhWTdZTlQ3OXNqbWZpK3ZNTGtnZTZEWk54a0dYOFJmS0dabWlBOVNhbER1YWlKb0tFRitQaFNHNk1XUDV6WE11K01FbFFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxNzA5NzczCWZpbGU6SnVzdCBBbm90aGVyIE11c2ljIENsaWVudF8xLjIuNDFfeDY0LXNldHVwLmV4ZQpqSFpEaWVsc1p3clFwKzVDWEZRWDVjRDBaWmRGSHFSN2lveDMveGlFZ0dXZ1c1OWsyNWlZQ2s4Z3VmWk5Ia1ZTY05COHhkakhXSHFzZnZBR3RYOHpBUT09Cg==",
-      "url": "https://github.com/2latemc/JustAnotherMusicClient/releases/download/v1.2.41/Just.Another.Music.Client_1.2.41_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRelk1K0tSZjhBMHgzc1Z5dFJwajNwUlBaa1ZuYUdHcnMwSmtJYnR4TlJMc3VWb3lhZzlteWJyaGNEN05FMnVwcG9zVndXSzhvVmZvVTJ2QlFELzI3c1kwekFDdCs4a3dvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxODk2MjY1CWZpbGU6SnVzdCBBbm90aGVyIE11c2ljIENsaWVudF8xLjIuNF94NjQtc2V0dXAuZXhlCjhIYURWbjJUZHFiTUhXeDVJRlArcjEvSXFoME93Q2RsTFFrVVdPTFFtbUFQbnAwSHU5Q3FtMFRpQnNteHRMaUtIcFhhZ2RGbzQ4TldPL0l2M1lPZkNnPT0K",
+      "url": "https://github.com/2latemc/JustAnotherMusicClient/releases/download/v1.2.4/Just.Another.Music.Client_1.2.4_x64-setup.exe"
     },
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRelk1K0tSZjhBMDRDVHpVV3ZELytCQ1doTnNhWTdZTlQ3OXNqbWZpK3ZNTGtnZTZEWk54a0dYOFJmS0dabWlBOVNhbER1YWlKb0tFRitQaFNHNk1XUDV6WE11K01FbFFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxNzA5NzczCWZpbGU6SnVzdCBBbm90aGVyIE11c2ljIENsaWVudF8xLjIuNDFfeDY0LXNldHVwLmV4ZQpqSFpEaWVsc1p3clFwKzVDWEZRWDVjRDBaWmRGSHFSN2lveDMveGlFZ0dXZ1c1OWsyNWlZQ2s4Z3VmWk5Ia1ZTY05COHhkakhXSHFzZnZBR3RYOHpBUT09Cg==",
-      "url": "https://github.com/2latemc/JustAnotherMusicClient/releases/download/v1.2.41/Just.Another.Music.Client_1.2.41_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRelk1K0tSZjhBMHgzc1Z5dFJwajNwUlBaa1ZuYUdHcnMwSmtJYnR4TlJMc3VWb3lhZzlteWJyaGNEN05FMnVwcG9zVndXSzhvVmZvVTJ2QlFELzI3c1kwekFDdCs4a3dvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxODk2MjY1CWZpbGU6SnVzdCBBbm90aGVyIE11c2ljIENsaWVudF8xLjIuNF94NjQtc2V0dXAuZXhlCjhIYURWbjJUZHFiTUhXeDVJRlArcjEvSXFoME93Q2RsTFFrVVdPTFFtbUFQbnAwSHU5Q3FtMFRpQnNteHRMaUtIcFhhZ2RGbzQ4TldPL0l2M1lPZkNnPT0K",
+      "url": "https://github.com/2latemc/JustAnotherMusicClient/releases/download/v1.2.4/Just.Another.Music.Client_1.2.4_x64-setup.exe"
     },
     "windows-x86_64-msi": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRelk1K0tSZjhBMDl1VjRJbmQydlJVTDYyVGczUGVIM1E0L3JBUGdzQmtQMmRpMXhueC92OGFaOXlDMCtsb3BDUmtXM2h5dFNpMnRvOFQ5K1NKRkUzMDJtdjhwU2tBb2dvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxNzA5NzczCWZpbGU6SnVzdCBBbm90aGVyIE11c2ljIENsaWVudF8xLjIuNDFfeDY0X2VuLVVTLm1zaQpVa3l5VUFZdWhuRVVsMU9mQ05mbWFVcldYVkI5VkNKdmVHTGhkTjRFZUdydzBaTWVITlN0bzA0SEpxZkp5cWtpSTliQWVPMHErL0NnNkNoR3V1dHZBZz09Cg==",
-      "url": "https://github.com/2latemc/JustAnotherMusicClient/releases/download/v1.2.41/Just.Another.Music.Client_1.2.41_x64_en-US.msi"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRelk1K0tSZjhBMDhsVzZkaWZHREZNVDZzWkJxNTkrczFyWDZaZ3RYVm1zS0txVEpwTGJ3SlVMYmdBNmh2WmNoWFpGWjRaaDRpMElYQUtmemJ1TnZuSmlaaUNEcEhyakFZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxODk2MjY1CWZpbGU6SnVzdCBBbm90aGVyIE11c2ljIENsaWVudF8xLjIuNF94NjRfZW4tVVMubXNpCjFFOHRiTi8zUVFEeHBSbEFWQ0FvdjdQSFU4eUhlTGx3YXZ3RGJnTlVtOGtGbmlIbzBrTFYrcm01U3hwSEZkYkwwbFNSRmtBNEVGNXdiVXhMaFJjTEFnPT0K",
+      "url": "https://github.com/2latemc/JustAnotherMusicClient/releases/download/v1.2.4/Just.Another.Music.Client_1.2.4_x64_en-US.msi"
     }
   }
 }
