@@ -2117,7 +2117,7 @@ dependencies = [
 
 [[package]]
 name = "just-another-music-client"
-version = "1.2.61"
+version = "1.2.62"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
