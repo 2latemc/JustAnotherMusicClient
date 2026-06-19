@@ -10,13 +10,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-<<<<<<< Updated upstream
+
 use tauri::utils::config::FrontendDist;
 use tauri::utils::config_v1::WindowUrl;
-use tauri::Manager;
-=======
+
 use tauri::{Emitter, Manager};
->>>>>>> Stashed changes
 
 #[cfg(target_os = "macos")]
 use aes_gcm::{
