@@ -40,6 +40,11 @@ import {
   useNativeWindowControls,
   useWindowsStyleWindowControls,
 } from "../settings/windowControls";
+import {
+  resetMiniPlayerPosition,
+  setMiniPlayerEnabled,
+  useMiniPlayerEnabled,
+} from "../settings/miniPlayer";
 import styles from "./SettingsPage.module.css";
 
 const GITHUB_REPOSITORY_URL = "https://github.com/2latemc/JustAnotherMusicClient";
@@ -72,7 +77,9 @@ export function SettingsPage({
   const [autostartEnabled, setAutostartEnabledState] = useState(false);
   const [autostartLoading, setAutostartLoading] = useState(true);
   const [autostartError, setAutostartError] = useState<string | null>(null);
+  const [miniPlayerResetting, setMiniPlayerResetting] = useState(false);
   const paperPcMode = usePaperPcMode();
+  const miniPlayerEnabled = useMiniPlayerEnabled();
   const windowsStyleWindowControls = useWindowsStyleWindowControls();
   const nativeWindowControls = useNativeWindowControls();
   const account = libraryState.library?.account;
@@ -165,6 +172,15 @@ export function SettingsPage({
       setAutostartError("Unable to update the startup setting.");
     } finally {
       setAutostartLoading(false);
+    }
+  };
+
+  const handleResetMiniPlayerPosition = async () => {
+    setMiniPlayerResetting(true);
+    try {
+      await resetMiniPlayerPosition();
+    } finally {
+      setMiniPlayerResetting(false);
     }
   };
 
@@ -373,9 +389,38 @@ export function SettingsPage({
         <div className={styles.cardHeader}>
           <div>
             <h2 id="window-settings-title">Window controls</h2>
-            <p>Choose the title bar buttons shown around the app.</p>
+            <p>Choose the title bar buttons and compact player behavior.</p>
           </div>
           <IconLayoutSidebarRight className={styles.cardIcon} size={22} />
+        </div>
+
+        <label className={styles.toggleRow}>
+          <span className={styles.toggleDescription}>
+            <strong>Mini player</strong>
+            <span>Show compact playback controls when the main window is not focused.</span>
+          </span>
+          <input
+            className={styles.toggleInput}
+            type="checkbox"
+            checked={miniPlayerEnabled}
+            onChange={(event) => setMiniPlayerEnabled(event.target.checked)}
+          />
+          <span className={styles.toggle} aria-hidden="true" />
+        </label>
+
+        <div className={styles.settingActionRow}>
+          <span className={styles.toggleDescription}>
+            <strong>Mini player position</strong>
+            <span>Move the mini player back to the bottom center of this screen.</span>
+          </span>
+          <button
+            className={styles.secondaryButton}
+            type="button"
+            disabled={miniPlayerResetting}
+            onClick={() => void handleResetMiniPlayerPosition()}
+          >
+            {miniPlayerResetting ? "Resetting..." : "Reset position"}
+          </button>
         </div>
 
         <label className={styles.toggleRow}>

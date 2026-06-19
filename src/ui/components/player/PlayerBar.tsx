@@ -14,6 +14,7 @@ interface PlayerBarProps {
   onToggleQueue: () => void;
   isQueueOpen: boolean;
   onConnectionRestored: () => Promise<void>;
+  handlePlayerBarClick:()=>void;
 }
 
 const CONNECTION_CHECK_URLS = [
@@ -21,9 +22,10 @@ const CONNECTION_CHECK_URLS = [
   "https://cp.cloudflare.com/generate_204",
 ];
 
-export function PlayerBar({ onToggleLyrics, onToggleQueue, isQueueOpen, onConnectionRestored }: PlayerBarProps) {
+export function PlayerBar({ onToggleLyrics, onToggleQueue, isQueueOpen, onConnectionRestored,handlePlayerBarClick }: PlayerBarProps) {
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [isCheckingConnection, setIsCheckingConnection] = useState(false);
+ 
   const connectionCheckRef = useRef<Promise<boolean> | null>(null);
   const wasOfflineRef = useRef(!navigator.onLine);
   const recoveryStartedRef = useRef(false);
@@ -134,6 +136,8 @@ export function PlayerBar({ onToggleLyrics, onToggleQueue, isQueueOpen, onConnec
     playerController.cyclePlaybackOrderMode();
   };
 
+
+
   return (
     <>
       {!isOnline && (
@@ -157,7 +161,9 @@ export function PlayerBar({ onToggleLyrics, onToggleQueue, isQueueOpen, onConnec
         </div>
       )}
 
-      <div className={styles.playerBar}>
+
+      <div className={styles.playerBar} onClick={handlePlayerBarClick}>
+   
         <div className={styles.seekBarContainer}>
           <SeekBar />
         </div>

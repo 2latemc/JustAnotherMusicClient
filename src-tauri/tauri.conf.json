@@ -19,7 +19,19 @@
         "height": 800,
         "minWidth": 900,
         "minHeight": 600
-      }
+      },{
+  "label": "mini-player",
+  "url": "/mini.html",
+  "width": 160,
+  "height": 200,
+  "resizable": false,
+  "decorations": false,
+  "alwaysOnTop": true,
+  "transparent": true,
+  "visible": false,
+  "shadow": false,
+   "skipTaskbar": true
+}
     ],
     "security": {
       "csp": null

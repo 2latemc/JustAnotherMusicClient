@@ -46,6 +46,11 @@ import {
 } from "./components/Onboarding";
 import { isMacOS } from "./platform";
 
+import { emit, listen } from "@tauri-apps/api/event";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { currentMonitor } from "@tauri-apps/api/window";
+import { PhysicalPosition } from "@tauri-apps/api/dpi";
+import { getSavedMiniPlayerPosition, useMiniPlayerEnabled } from "./settings/miniPlayer";
 const restoredSession = loadAppSession();
 const LOADING_SCREEN_FADE_MS = 80;
 const ONBOARDING_COMPLETE_KEY = "yt-music-dock:onboarding-complete";
@@ -53,6 +58,7 @@ const KEYCHAIN_NOTICE_COMPLETE_KEY = "yt-music-dock:keychain-notice-complete";
 const LOADING_SCREEN_MIN_MS = 1000;
 const MOUSE_BACK_BUTTON = 3;
 const MOUSE_FORWARD_BUTTON = 4;
+const MINI_PLAYER_BOTTOM_MARGIN = 24;
 
 function getNavigationState(tab: Tab): TabViewState | null {
   if (tab.view === "settings") return null;
@@ -106,11 +112,29 @@ function stripNavigationHistory(tab: Tab): Tab {
   return sessionTab;
 }
 
+async function placeMiniPlayerAtBottomCenter(miniWin: WebviewWindow) {
+  const savedPosition = getSavedMiniPlayerPosition();
+  if (savedPosition) {
+    await miniWin.setPosition(new PhysicalPosition(savedPosition.x, savedPosition.y));
+    return;
+  }
+
+  const monitor = await currentMonitor();
+  if (!monitor) return;
+
+  const size = await miniWin.outerSize();
+  const x = monitor.position.x + Math.round((monitor.size.width - size.width) / 2);
+  const y = monitor.position.y + monitor.size.height - size.height - MINI_PLAYER_BOTTOM_MARGIN;
+
+  await miniWin.setPosition(new PhysicalPosition(x, y));
+}
+
 export default function App() {
   useDisableContextMenu();
   const libraryState = useLibraryState();
   const playerState = usePlayerState();
   const playerUIState = usePlayerUIState();
+  const miniPlayerEnabled = useMiniPlayerEnabled();
 
   const [tabs, setTabs] = useState<Tab[]>(
     () => restoredSession?.tabs.map(stripNavigationHistory) ?? [{ id: "1", view: "home" }],
@@ -140,11 +164,14 @@ export default function App() {
     () => localStorage.getItem(ONBOARDING_COMPLETE_KEY) !== "true"
   );
   const [availableUpdate, setAvailableUpdate] = useState<UpdateInfo | null>(null);
+  const [isExpandedPlayerBar,setIsExpandedPlayerBar]=  useState(false)
   const dismissAvailableUpdate = useCallback(() => {
     setAvailableUpdate(null);
   }, []);
   const loadingScreenDismissedRef = useRef(false);
   const loadingScreenStartedAtRef = useRef(performance.now());
+  const miniPlayerPositionedRef = useRef(false);
+  const miniPlayerRestoreSuppressUntilRef = useRef(0);
   const sessionStateRef = useRef({ tabs, activeTabId, nextTabId });
   sessionStateRef.current = { tabs, activeTabId, nextTabId };
 
@@ -937,6 +964,147 @@ export default function App() {
     tabs,
   ]);
 
+
+  const handlePlayerBarClick=()=>{
+    setIsExpandedPlayerBar(!isExpandedPlayerBar)
+  }
+
+
+
+useEffect(() => {
+  const setupListeners = async () => {
+    const hideMiniPlayer = async () => {
+      const miniWin = await WebviewWindow.getByLabel("mini-player");
+      if (miniWin) await miniWin.hide();
+    };
+
+    const unlistenMinimize = await listen("window-minimized", async () => {
+      const miniWin = await WebviewWindow.getByLabel("mini-player");
+      if (!miniWin) return;
+
+      if (Date.now() < miniPlayerRestoreSuppressUntilRef.current) {
+        await miniWin.hide();
+        return;
+      }
+
+      if (!miniPlayerEnabled) {
+        await miniWin.hide();
+        return;
+      }
+
+      if (!miniPlayerPositionedRef.current) {
+        try {
+          await placeMiniPlayerAtBottomCenter(miniWin);
+        } catch (_) {}
+        miniPlayerPositionedRef.current = true;
+      }
+
+      await miniWin.show();
+      await miniWin.setFocus();
+    });
+
+    const unlistenFocus = await listen("window-focused", hideMiniPlayer);
+    const unlistenRestoreMain = await listen("mini-player:restore-main", async () => {
+      miniPlayerRestoreSuppressUntilRef.current = Date.now() + 800;
+      await hideMiniPlayer();
+    });
+
+    if (!miniPlayerEnabled) {
+      await hideMiniPlayer();
+    }
+
+    return () => {
+      unlistenMinimize();
+      unlistenFocus();
+      unlistenRestoreMain();
+    };
+  };
+
+  const cleanup = setupListeners();
+  return () => { cleanup.then(fn => fn?.()); };
+}, [miniPlayerEnabled]);
+
+
+useEffect(() => {
+  const setup = async () => {
+    const unlistenPlayPause = await listen("mini-player:toggle-play-pause", () => {
+      void playerController.togglePlayPause();
+    });
+    const unlistenNext = await listen("mini-player:skip-next", () => {
+      void playerController.skipToNext();
+    });
+    const unlistenPrev = await listen("mini-player:skip-previous", () => {
+      void playerController.skipToPrevious();
+    });
+
+    return () => {
+      unlistenPlayPause();
+      unlistenNext();
+      unlistenPrev();
+    };
+  };
+
+  const cleanup = setup();
+  return () => { cleanup.then(fn => fn?.()); };
+}, []);
+useEffect(() => {
+  let lastTrackId: string | null = null;
+  let lastStatus: string | null = null;
+  let lastArtworkUrl: string | null = null;
+
+  const syncPlayerState = () => {
+    const state = tabManager.getActiveState();
+    const trackId = state.currentTrack?.id ?? null;
+    const status = state.status;
+    const artworkUrl = state.currentTrack?.artworkUrl ?? null;
+
+    if (trackId === lastTrackId && status === lastStatus && artworkUrl === lastArtworkUrl) return;
+    lastTrackId = trackId;
+    lastStatus = status;
+    lastArtworkUrl = artworkUrl;
+
+    void emit("player-state-sync", {
+      status,
+      artworkUrl,
+      title: state.currentTrack?.title ?? null,
+      artist: state.currentTrack?.artist ?? null,
+    });
+  };
+
+  syncPlayerState();
+  const unsubscribe = tabManager.subscribe(syncPlayerState);
+
+  // sync time separately via rAF — don't put this in tabManager.subscribe
+  let running = true;
+  let rafId: number;
+
+  const syncTime = () => {
+    if (!running) return;
+    void emit("player-time-sync", {
+      currentTime: playerController.getCurrentTime(),
+      duration: playerController.getDuration(),
+    });
+    rafId = requestAnimationFrame(syncTime);
+  };
+  rafId = requestAnimationFrame(syncTime);
+
+  return () => {
+    unsubscribe();
+    running = false;
+    cancelAnimationFrame(rafId);
+  };
+}, []);
+
+useEffect(() => {
+  const setup = async () => {
+    const unlisten = await listen<{ time: number }>("mini-player:seek", (event) => {
+      void playerController.seekTo(event.payload.time);
+    });
+    return unlisten;
+  };
+  const cleanup = setup();
+  return () => { cleanup.then(fn => fn()); };
+}, []);
   return (
     <ArtistNavigationProvider onNavigate={handleNavigateArtist}>
     <TrackContextMenuProvider libraryController={libraryController}>
@@ -959,7 +1127,9 @@ export default function App() {
         onReorderTab={handleReorderTab}
         onboardingFirstTabId={onboardingStep ? onboardingFirstTabId : undefined}
       />
+      
       <div className={styles.content}>
+       
         <Layout
           sidebarWidth={sidebarWidth}
           onSidebarWidthChange={setSidebarWidth}
@@ -982,6 +1152,11 @@ export default function App() {
             />
           ) : undefined}
         >
+{/* <ExpandedPlayerBar 
+        isOpen={isExpandedPlayerBar} 
+        onClose={() => setIsExpandedPlayerBar(false)} 
+      /> */}
+
           {playerUIState.isLyricsOpen && activeTab?.view !== "settings" ? (
             <LyricsView onClose={() => playerUIStore.setLyricsOpen(false)} />
           ) : (
@@ -1048,11 +1223,13 @@ export default function App() {
           )}
         </Layout>
       </div>
+      
       <PlayerBar
         onToggleLyrics={handleToggleLyrics}
         onToggleQueue={handleToggleQueue}
         isQueueOpen={isQueuePanelOpen}
         onConnectionRestored={handleConnectionRestored}
+        handlePlayerBarClick={handlePlayerBarClick}
       />
       <SearchOverlay
         isOpen={isSearchOpen && activeTab?.view !== "settings"}

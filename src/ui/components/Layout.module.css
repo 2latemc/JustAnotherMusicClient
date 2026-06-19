@@ -9,6 +9,8 @@
     radial-gradient(circle at 72% 18%, rgb(255 255 255 / 4%), transparent 27%),
     radial-gradient(circle at 24% 82%, rgb(255 255 255 / 2.5%), transparent 30%),
     #020202;
+
+    
 }
 
 :global(html[data-paper-pc]) .layout {
@@ -90,6 +92,7 @@
   overflow: hidden;
   position: relative;
   background: transparent;
+  
 }
 
 .contentArea {
@@ -112,6 +115,7 @@
   min-height: 0;
   overflow-y: auto;
   padding: 0 56px 56px 56px;
+ 
 }
 
 .rightPanel {
@@ -222,4 +226,15 @@
   .twinkleStar {
     animation: none;
   }
+}
+
+.expandedContainer{
+  position: absolute;
+  border: 2px solid red;
+  width:100%;
+  height:100%;
+  background-color: darkgreen;
+  display: flex;
+  justify-content: flex-end;
+ padding-right: 10px;
 }

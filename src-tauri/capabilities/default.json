@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window",
-  "windows": ["main"],
+  "windows": ["main","mini-player"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
@@ -16,7 +16,18 @@
     "autostart:allow-is-enabled",
     "opener:default",
     "updater:default",
-    "process:allow-restart"
+    "process:allow-restart",
+      "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "core:window:allow-unminimize",
+    "core:window:allow-outer-position",
+"core:window:allow-outer-size",
+"core:window:allow-current-monitor",
+"core:window:allow-set-position",
+"core:window:allow-cursor-position",
+"core:window:allow-set-cursor-icon",
+"core:window:allow-set-ignore-cursor-events"
   ],
   "allowlist": {
     "shell": {

@@ -1,0 +1,100 @@
+/* ==========================================================================
+   1. Outer Frame (Floats over the page, prevents layout shifts)
+   ========================================================================== */
+.expandedPlayerBarFrame {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 70px; /* Default mini-bar height when closed */
+  overflow: hidden; /* Traps the expanded view inside until it grows */
+  z-index: 999; /* Floats over everything securely */
+  background-color: #111; /* Background for the mini bar frame */
+  box-shadow: 0 -4px 10px rgba(0, 0, 0, 0.3);
+  
+  /* Smoothly animates the frame height change */
+  transition: height 0.5s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+/* Fired when isOpen is true: grows the outer boundary to full screen */
+.expandedPlayerBarFrame.parentOpen {
+  height: 100vh;
+}
+
+/* ==========================================================================
+   2. Mini Player Layout
+   ========================================================================== */
+.miniPlayerContent {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 70px;
+  padding: 0 20px;
+  color: white;
+  cursor: pointer;
+}
+
+.tapHint {
+  font-size: 0.85rem;
+  opacity: 0.6;
+}
+
+/* ==========================================================================
+   3. Inner Sliding Panel (The Expanded Interface)
+   ========================================================================== */
+.slideContainer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  
+  /* Red background with frosted glass blur */
+  background-color: rgba(255, 0, 0, 0.75); 
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+
+  /* Pushed down out of view initially */
+  transform: translateY(100%);
+  transition: transform 0.5s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+/* Slides up into view inside the 100vh frame */
+.slideContainer.slideActive {
+  transform: translateY(0);
+}
+
+/* Fullscreen Content Layout */
+.expandedContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: white;
+  padding: 20px;
+}
+
+.albumArt {
+  width: 250px;
+  height: 250px;
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  margin: 20px 0;
+}
+
+.songTitle { font-size: 1.5rem; font-weight: bold; margin: 5px 0; }
+.artistName { font-size: 1rem; opacity: 0.8; }
+
+.closeBtn {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  font-size: 18px;
+  padding: 8px 12px;
+  border-radius: 50%;
+  cursor: pointer;
+}

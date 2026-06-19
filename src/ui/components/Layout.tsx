@@ -79,6 +79,7 @@ export function Layout({
   return (
     <div className={styles.layout}>
       {!paperPcMode && <StarField />}
+      
       <div className={styles.mainContent}>
         <Sidebar
           width={sidebarWidth}
@@ -97,9 +98,12 @@ export function Layout({
               onForward={onNavigateForward}
             />
           )}
+           
           <div className={styles.contentContainer}>
+
             <div className={`${styles.pageContent} ${fullBleedContent ? styles.fullBleedContent : ""}`}>
               {children}
+              
             </div>
             {rightPanel && (
               <div

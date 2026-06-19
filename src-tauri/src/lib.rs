@@ -10,9 +10,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
 use tauri::utils::config::FrontendDist;
 use tauri::utils::config_v1::WindowUrl;
-use tauri::Manager;
+
+use tauri::{Emitter, Manager};
 
 #[cfg(target_os = "macos")]
 use aes_gcm::{
@@ -1722,18 +1724,48 @@ pub fn run() {
     let builder = builder.manage(windows_media::WindowsMediaSession::new());
 
     builder
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                eprintln!(
-                    "[internal][tauri][info] window close requested label={}",
-                    window.label()
-                );
-                if window.label() == "main" {
-                    api.prevent_close();
-                    window.app_handle().exit(0);
+       .on_window_event(|window, event| {
+    match event {
+        tauri::WindowEvent::CloseRequested { api, .. } => {
+            eprintln!(
+                "[internal][tauri][info] window close requested label={}",
+                window.label()
+            );
+            if window.label() == "main" {
+                api.prevent_close();
+                window.app_handle().exit(0);
+            }
+        }
+tauri::WindowEvent::Focused(false) => {
+    if window.label() == "main" {
+        let app = window.app_handle().clone();
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(100));
+
+            if let Some(main) = app.get_webview_window("main") {
+                if let Ok(true) = main.is_focused() {
+                    return;
                 }
             }
-        })
+
+            if let Some(mini) = app.get_webview_window("mini-player") {
+                if let Ok(true) = mini.is_focused() {
+                    return;
+                }
+            }
+
+            let _ = app.emit("window-minimized", ());
+        });
+    }
+}
+tauri::WindowEvent::Focused(true) => {
+    if window.label() == "main" {
+        let _ = window.app_handle().emit("window-focused", ());
+    }
+}
+        _ => {}
+    }
+})
         .invoke_handler(tauri::generate_handler![
             greet,
             quit_app,

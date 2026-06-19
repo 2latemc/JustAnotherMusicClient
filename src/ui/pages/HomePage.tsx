@@ -140,6 +140,7 @@ export function HomePage({
         isLoadingSuggestions ? styles.loadingRecommendations : styles.loadedRecommendations
       }`}
     >
+        
       <div className={styles.sectionHeading}>
         <h1>Made for you</h1>
       </div>
@@ -164,6 +165,7 @@ export function HomePage({
           ))}
         </div>
       )}
+  
     </section>
   );
 
