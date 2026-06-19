@@ -48,6 +48,7 @@ JustAnotherMusicClient brings YouTube Music to the desktop in a focused, native-
 | Caching | Playlists, lyrics, and more are cached for significantly faster performance |
 | Recommendations | Home Tab with personalized song sugesstions and a "random" shuffle wheel, just like on the mobile client |
 | Discord RPC | The songs you are listening to are displayed on Discord |
+| Mini player | Small Mini Music player when you tab out of the app that can be moved with either right mouse or dragging |
 | Synced Lyrics | Real-time synced lyrics, not even available on the official client |
 | YouTube Music Integration | Browse, search, like songs, and play music via an integrated search bar |
 | Account Support | Sign in to access your library, playlists, recommendations, and other account features |
