@@ -4,23 +4,45 @@
     <source width="831px" media="(prefers-color-scheme: dark)" srcset="assets\img\Logo_Header_SMALLER.png" />
     <img width="831px" src="assets\img\LogoHeader_LIGHT.png" />
   </picture>
+  <p align="center">
+    <a href="https://github.com/2latemc/JustAnotherMusicClient/releases/latest"><img src="https://img.shields.io/github/downloads/2latemc/JustAnotherMusicClient/total?style=for-the-badge&color=FF0000&label=downloads" alt="Downloads"></a>
+    <a href="https://github.com/2latemc/JustAnotherMusicClient/releases/latest"><img src="https://img.shields.io/github/package-json/v/2latemc/JustAnotherMusicClient?style=for-the-badge&color=ff3d00&label=version" alt="Version">
+    <a href="https://github.com/2latemc/JustAnotherMusicClient/blob/main/LICENSE"><img src="https://img.shields.io/github/license/2latemc/JustAnotherMusicClient?style=for-the-badge&color=ff6900" alt="License">
+    <a href="https://github.com/2latemc/JustAnotherMusicClient/"><img src="https://img.shields.io/github/stars/2latemc/JustAnotherMusicClient?style=for-the-badge&color=ff9700&label=stars" alt="Stars">
+    <img src="https://img.shields.io/badge/reddit-orange?style=for-the-badge&logo=reddit&logoColor=black&link=https%3A%2F%2Fwww.reddit.com%2Fr%2FJustAnotherMusicC%2F" alt="Reddit">
+  </p> 
+  
 </p>
+<br>
 
 A desktop YouTube Music client built with Tauri, React, and TypeScript for **Windows, MacOs & Linux**.
-<p></p>
 
-> **IMPORTANT**
->
-> This is an independent, unofficial project and is not affiliated with, authorized by, sponsored by, or endorsed by YouTube or Google. The only reason I am making this, is becuase there is no official YouTube music desktop client. 
-> 
->
+<br>
 
-If you like this project, **starring it on Github** would help A LOT!
+> **IMPORTANT** This is an independent, unofficial project and is not affiliated with, authorized by, sponsored by, or endorsed by YouTube or Google. The only reason I am making this, is becuase there is no official YouTube music desktop client. 
+
+
+<br>
+
+<br>
+<p align="center">
+ <a href="https://ko-fi.com/totally2late">
+    <img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Donate on Ko-fi" width="350">
+  </a>
+  <br>
+
+</picture>
+
 ## About ℹ️
 
 JustAnotherMusicClient brings YouTube Music to the desktop in a focused, native-feeling application. YouTube does not provide an official desktop client, so this project aims to provide a polished alternative that integrates with YouTube Music while keeping the experience fast and familiar.
 
+If you like this project, **starring it on Github** would help A LOT! 
+
 **Contact for legal purposes:** team@2late.org
+
+[**Buy me a cofee**](https://ko-fi.com/totally2late): This supports development and helps me update this project and pay for hosting! If you want a feature to be finished a bit faster, mabey add it to a message there (; 
+  
 <source
       width="831px"
       media="(prefers-color-scheme: dark)"
