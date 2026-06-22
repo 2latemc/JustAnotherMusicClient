@@ -50,7 +50,7 @@ import {
   OnboardingWelcome,
   type OnboardingStep,
 } from "./components/Onboarding";
-import { isLinux, isMacOS, isWindows } from "./platform";
+import { isLinux, isMacOS } from "./platform";
 
 import { emit, listen } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -63,6 +63,7 @@ import {
 } from "./settings/miniPlayer";
 const restoredSession = loadAppSession();
 const LOADING_SCREEN_FADE_MS = 80;
+const LOADING_SCREEN_MAX_MS = 4000;
 const ONBOARDING_COMPLETE_KEY = "yt-music-dock:onboarding-complete";
 const ONBOARDING_COMPLETE_SETTING_KEY = "onboardingComplete";
 const KEYCHAIN_NOTICE_COMPLETE_KEY = "yt-music-dock:keychain-notice-complete";
@@ -70,6 +71,7 @@ const LOADING_SCREEN_MIN_MS = 1000;
 const MOUSE_BACK_BUTTON = 3;
 const MOUSE_FORWARD_BUTTON = 4;
 const MINI_PLAYER_BOTTOM_MARGIN = 24;
+const MAIN_WINDOW_DRAG_BACKGROUND_SUPPRESS_MS = 10000;
 
 function getNavigationState(tab: Tab): TabViewState | null {
   if (tab.view === "settings") return null;
@@ -221,6 +223,8 @@ export default function App() {
   const loadingScreenStartedAtRef = useRef(performance.now());
   const miniPlayerPositionedRef = useRef(false);
   const miniPlayerRestoreSuppressUntilRef = useRef(0);
+  const mainWindowDragSuppressUntilRef = useRef(0);
+  const lastErrorAlertRef = useRef<string | null>(null);
   const sessionStateRef = useRef({ tabs, activeTabId, nextTabId });
   sessionStateRef.current = { tabs, activeTabId, nextTabId };
 
@@ -228,6 +232,16 @@ export default function App() {
   const isQueuePanelOpen = activeTab?.isQueueOpen ?? false;
   const canNavigateBack = (activeTab?.navigationHistory?.back.length ?? 0) > 0;
   const canNavigateForward = (activeTab?.navigationHistory?.forward.length ?? 0) > 0;
+
+  const dismissLoadingScreen = useCallback(() => {
+    if (loadingScreenDismissedRef.current) return;
+
+    loadingScreenDismissedRef.current = true;
+    setLoadingScreenState("leaving");
+    window.setTimeout(() => {
+      setLoadingScreenState("hidden");
+    }, LOADING_SCREEN_FADE_MS);
+  }, []);
 
   const markOnboardingComplete = useCallback((showCompleteToast: boolean) => {
     saveLocalOnboardingComplete();
@@ -412,6 +426,34 @@ export default function App() {
   }, [showKeychainNotice]);
 
   useEffect(() => {
+    if (libraryState.status !== "error" || !libraryState.error) return;
+    const message = `YouTube Music sign-in or library sync failed:\n\n${libraryState.error}`;
+    if (lastErrorAlertRef.current === message) return;
+    lastErrorAlertRef.current = message;
+    window.alert(message);
+  }, [libraryState.error, libraryState.status]);
+
+  useEffect(() => {
+    if (playerState.status !== "error" || !playerState.error) return;
+    const message = `Playback failed:\n\n${playerState.error}`;
+    if (lastErrorAlertRef.current === message) return;
+    lastErrorAlertRef.current = message;
+    window.alert(message);
+  }, [playerState.error, playerState.status]);
+
+  useEffect(() => {
+    if (showKeychainNotice) return;
+
+    const elapsed = performance.now() - loadingScreenStartedAtRef.current;
+    const remainingMaximum = Math.max(0, LOADING_SCREEN_MAX_MS - LOADING_SCREEN_FADE_MS - elapsed);
+    const maxTimer = window.setTimeout(dismissLoadingScreen, remainingMaximum);
+
+    return () => {
+      window.clearTimeout(maxTimer);
+    };
+  }, [dismissLoadingScreen, showKeychainNotice]);
+
+  useEffect(() => {
     if (showKeychainNotice) {
       loadingScreenDismissedRef.current = true;
       setLoadingScreenState("hidden");
@@ -438,11 +480,7 @@ export default function App() {
       fadeTimer = window.setTimeout(() => {
         if (cancelled || loadingScreenDismissedRef.current) return;
 
-        loadingScreenDismissedRef.current = true;
-        setLoadingScreenState("leaving");
-        window.setTimeout(() => {
-          setLoadingScreenState("hidden");
-        }, LOADING_SCREEN_FADE_MS);
+        dismissLoadingScreen();
       }, remainingMinimum);
     };
 
@@ -451,7 +489,7 @@ export default function App() {
       cancelled = true;
       if (fadeTimer !== undefined) window.clearTimeout(fadeTimer);
     };
-  }, [libraryState.library, libraryState.status, showKeychainNotice]);
+  }, [dismissLoadingScreen, libraryState.library, libraryState.status, showKeychainNotice]);
 
   useEffect(() => {
     const persist = () => {
@@ -1077,6 +1115,11 @@ useEffect(() => {
       const miniWin = await WebviewWindow.getByLabel("mini-player");
       if (!miniWin) return;
 
+      if (Date.now() < mainWindowDragSuppressUntilRef.current) {
+        await miniWin.hide();
+        return;
+      }
+
       if (Date.now() < miniPlayerRestoreSuppressUntilRef.current) {
         await miniWin.hide();
         return;
@@ -1103,7 +1146,12 @@ useEffect(() => {
       await miniWin.setFocus();
     });
 
+    const handleMainWindowDragStarted = () => {
+      mainWindowDragSuppressUntilRef.current = Date.now() + MAIN_WINDOW_DRAG_BACKGROUND_SUPPRESS_MS;
+    };
+
     const unlistenFocus = await listen("window-focused", hideMiniPlayer);
+    window.addEventListener("main-window-drag-started", handleMainWindowDragStarted);
     const unlistenRestoreMain = await listen("mini-player:restore-main", async () => {
       miniPlayerRestoreSuppressUntilRef.current = Date.now() + 800;
       await hideMiniPlayer();
@@ -1115,20 +1163,12 @@ useEffect(() => {
       },
     );
 
-    const handleWindowBlur = () => {
-      void emit("main-window-backgrounded");
-    };
-
-    if (isWindows || isLinux) {
-      window.addEventListener("blur", handleWindowBlur);
-    }
-
     if (!miniPlayerEnabled) {
       await hideMiniPlayer();
     }
 
     return () => {
-      window.removeEventListener("blur", handleWindowBlur);
+      window.removeEventListener("main-window-drag-started", handleMainWindowDragStarted);
       unlistenBackgrounded();
       unlistenFocus();
       unlistenRestoreMain();

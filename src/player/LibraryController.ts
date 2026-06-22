@@ -21,6 +21,23 @@ export interface LibraryState {
 }
 
 type Listener = () => void;
+const LIBRARY_REFRESH_TIMEOUT_MS = 20_000;
+const SIGN_IN_REFRESH_RETRY_DELAYS_MS = [0, 1_500, 5_000];
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timeoutId: number | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+  });
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
 
 export class LibraryController {
   private readonly listeners = new Set<Listener>();
@@ -104,7 +121,7 @@ export class LibraryController {
         this.setState({ status: "authorizing", authPrompt, error: null });
       });
       logInternalInfo("LibraryController.signIn authentication complete");
-      await this.refresh();
+      await this.refreshAfterSignIn();
       logInternalInfo("LibraryController.signIn refresh complete");
     } catch (error) {
       this.setFailure("YouTube Music sign-in failed.", error);
@@ -126,23 +143,70 @@ export class LibraryController {
     }
   }
 
-  async refresh(): Promise<void> {
+  async refresh(options: { suppressFailure?: boolean } = {}): Promise<void> {
     if (!this.dataSource.getLibrary) return;
     this.setState({ status: "loading", authPrompt: null, error: null });
     try {
-      const library = await this.dataSource.getLibrary((updatedLibrary) => {
-        this.setState({ status: "ready", library: updatedLibrary, authPrompt: null, error: null });
-      });
-      this.setState({ status: "ready", library, authPrompt: null, error: null });
-      logInternalInfo("LibraryController.refresh success", {
-        albumCount: library.albums.length,
-        playlistCount: library.playlists.length,
-        likedSongCount: library.likedSongs.length,
-        recentTrackCount: library.recentlyPlayed.length,
-      });
+      const library = await withTimeout(
+        this.dataSource.getLibrary((updatedLibrary) => {
+          this.setState({ status: "ready", library: updatedLibrary, authPrompt: null, error: null });
+        }),
+        LIBRARY_REFRESH_TIMEOUT_MS,
+        "YouTube Music library sync timed out.",
+      );
+      this.applyLibrary(library);
     } catch (error) {
+      if (options.suppressFailure) throw error;
       this.setFailure("Unable to load your YouTube Music library.", error);
     }
+  }
+
+  private applyLibrary(library: LibrarySnapshot): void {
+    this.setState({ status: "ready", library, authPrompt: null, error: null });
+    logInternalInfo("LibraryController.refresh success", {
+      albumCount: library.albums.length,
+      playlistCount: library.playlists.length,
+      likedSongCount: library.likedSongs.length,
+      recentTrackCount: library.recentlyPlayed.length,
+    });
+  }
+
+  private hasCompleteEnoughLibrary(library: LibrarySnapshot | null): boolean {
+    if (!library) return false;
+    return library.playlists.length > 0
+      || library.albums.length > 0
+      || library.likedSongs.length > 0;
+  }
+
+  private async refreshAfterSignIn(): Promise<void> {
+    let lastError: unknown = null;
+
+    for (let index = 0; index < SIGN_IN_REFRESH_RETRY_DELAYS_MS.length; index += 1) {
+      const delayMs = SIGN_IN_REFRESH_RETRY_DELAYS_MS[index];
+      if (delayMs > 0) await delay(delayMs);
+
+      try {
+        await this.refresh({ suppressFailure: true });
+        if (this.hasCompleteEnoughLibrary(this.state.library)) return;
+
+        logInternalInfo("LibraryController.signIn retrying incomplete library", {
+          attempt: index + 1,
+          playlistCount: this.state.library?.playlists.length ?? 0,
+          albumCount: this.state.library?.albums.length ?? 0,
+          likedSongCount: this.state.library?.likedSongs.length ?? 0,
+          recentTrackCount: this.state.library?.recentlyPlayed.length ?? 0,
+        });
+      } catch (error) {
+        lastError = error;
+        logInternalInfo("LibraryController.signIn library retry failed", {
+          attempt: index + 1,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    if (this.state.library) return;
+    throw lastError ?? new Error("YouTube Music library did not finish syncing after sign-in.");
   }
 
   async getAlbumTracks(album: Album, onUpdate?: (tracks: Track[]) => void): Promise<Track[]> {
@@ -321,7 +385,12 @@ export class LibraryController {
 
   private setFailure(message: string, error: unknown) {
     logInternalError("LibraryController operation failed", error);
-    this.setState({ status: "error", error: message, authPrompt: null });
+    const detail = error instanceof Error ? error.message : String(error);
+    this.setState({
+      status: "error",
+      error: detail && detail !== "[object Object]" ? `${message}\n\n${detail}` : message,
+      authPrompt: null,
+    });
   }
 
   private setState(partial: Partial<LibraryState>) {

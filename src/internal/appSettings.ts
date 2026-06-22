@@ -34,3 +34,14 @@ export async function removeAppSetting(key: string): Promise<void> {
     });
   }
 }
+
+export async function clearAppSettings(): Promise<void> {
+  try {
+    await invoke("app_settings_clear");
+  } catch (error) {
+    logInternalWarn("appSettings.clear failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
+}

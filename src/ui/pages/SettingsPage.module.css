@@ -56,6 +56,17 @@
   font-size: var(--font-size-lg);
 }
 
+.compactHeader {
+  padding-bottom: var(--spacing-md);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.compactHeader h2 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-lg);
+}
+
 .status {
   padding: 6px 10px;
   border: 1px solid var(--color-border);
@@ -192,14 +203,6 @@
   opacity: 0.65;
 }
 
-.cacheBody {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--spacing-lg);
-  padding-top: var(--spacing-lg);
-}
-
 .cacheUsage {
   display: flex;
   flex-direction: column;
@@ -219,11 +222,124 @@
   gap: var(--spacing-sm);
 }
 
+.settingsList {
+  display: flex;
+  flex-direction: column;
+}
+
+.settingRow,
+.actionRow,
+.cacheRow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg) 0;
+}
+
+.settingRow {
+  cursor: pointer;
+}
+
+.settingsList > :last-child {
+  padding-bottom: 0;
+}
+
+.settingsList > :not(:last-child) {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.cacheRow {
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
 .githubActions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-sm);
   margin-bottom: var(--spacing-lg);
+}
+
+.tabs {
+  position: relative;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(96px, 1fr);
+  margin-bottom: var(--spacing-lg);
+  padding: 2px;
+  border: 1px solid rgb(255 255 255 / 6%);
+  border-radius: var(--radius-full);
+  background: rgb(0 0 0 / 18%);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 18%);
+}
+
+.tabs::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  z-index: 0;
+  width: calc((100% - 4px) / var(--tab-count));
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 14%),
+    0 3px 10px rgb(255 0 51 / 22%);
+  transform: translateX(var(--active-tab-offset));
+  transition:
+    transform 220ms var(--easing-smooth),
+    background var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.tabs button {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--spacing-sm);
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: #858585;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.tabs button:hover {
+  color: #d5d5d5;
+  background: rgb(255 255 255 / 4%);
+}
+
+.tabs button:focus-visible {
+  outline: 2px solid white;
+  outline-offset: 2px;
+}
+
+.tabs .activeTab {
+  color: #fff;
+}
+
+.tabs .activeTab:hover {
+  background: transparent;
+}
+
+.tabs:has(.activeTab:hover)::before {
+  background: var(--color-accent-hover);
+}
+
+.tabPanel {
+  animation: settingsTabPanelIn 160ms var(--easing-smooth) both;
 }
 
 .githubButton {
@@ -313,13 +429,14 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-md);
-  padding-top: var(--spacing-lg);
+  padding: var(--spacing-md) 0;
   color: var(--color-text-primary);
   font-size: var(--font-size-sm);
 }
 
 .updateMessage {
-  margin: var(--spacing-lg) 0 0;
+  margin: 0;
+  padding: var(--spacing-md) 0;
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
 }
@@ -344,7 +461,8 @@
   opacity: 0.65;
 }
 
-.toggleRow:has(.toggleInput:disabled) {
+.toggleRow:has(.toggleInput:disabled),
+.settingRow:has(.toggleInput:disabled) {
   cursor: not-allowed;
   opacity: 0.65;
 }
@@ -424,14 +542,28 @@
     width: 100%;
   }
 
-  .cacheBody,
   .cacheControls {
     align-items: stretch;
     flex-direction: column;
   }
 
+  .settingRow,
+  .actionRow,
+  .cacheRow {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .settingRow {
+    flex-direction: row;
+  }
+
   .githubActions {
     flex-direction: column;
+  }
+
+  .tabs {
+    grid-auto-columns: minmax(0, 1fr);
   }
 
   .secondaryButton,
@@ -443,5 +575,23 @@
   .updateResult {
     align-items: stretch;
     flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tabs::before,
+  .tabPanel {
+    animation: none;
+    transition: none;
+  }
+}
+
+@keyframes settingsTabPanelIn {
+  from {
+    opacity: 0.78;
+  }
+
+  to {
+    opacity: 1;
   }
 }

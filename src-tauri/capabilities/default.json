@@ -48,6 +48,7 @@
       "app_setting_get",
       "app_setting_set",
       "app_setting_remove",
+      "app_settings_clear",
       "cache_get",
       "cache_set",
       "cache_stats",

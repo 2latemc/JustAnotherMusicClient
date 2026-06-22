@@ -18,7 +18,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { saveMiniPlayerPosition } from "../../settings/miniPlayer";
-import { isLinux, isMacOS } from "../../platform";
+import { isLinux, isMacOS, isWindows } from "../../platform";
 import { TrackArtwork } from "../TrackArtwork";
 import styles from "./MiniPlayer.module.css";
 
@@ -344,7 +344,7 @@ export default function MiniPlayer() {
     await win.hide();
   };
 
-  const stopRightButtonDrag = async () => {
+  const stopManualWindowDrag = async () => {
     if (dragTimerRef.current) {
       clearInterval(dragTimerRef.current);
       dragTimerRef.current = null;
@@ -360,34 +360,7 @@ export default function MiniPlayer() {
     await setIgnoreCursorEventsWhenReady(false);
   };
 
-  const handleContainerMouseDown = async (event: MouseEvent<HTMLDivElement>) => {
-    const isInteractiveTarget = event.target instanceof Element
-      && Boolean(event.target.closest(INTERACTIVE_SELECTOR));
-
-    if (isMacOS || isLinux) {
-      if (event.button !== LEFT_MOUSE_BUTTON || isInteractiveTarget) return;
-
-      event.preventDefault();
-      setIsDragging(true);
-      const stopNativeDrag = () => {
-        setIsDragging(false);
-        saveCurrentPositionSoon();
-      };
-      document.addEventListener("mouseup", stopNativeDrag, { once: true });
-      window.addEventListener("blur", stopNativeDrag, { once: true });
-
-      try {
-        await win.startDragging();
-        saveCurrentPositionSoon();
-      } catch (_) {}
-      return;
-    }
-
-    if (event.button !== RIGHT_MOUSE_BUTTON) return;
-
-    event.preventDefault();
-    event.stopPropagation();
-
+  const startManualWindowDrag = async (button: number) => {
     if (dragTimerRef.current) {
       clearInterval(dragTimerRef.current);
       dragTimerRef.current = null;
@@ -403,10 +376,10 @@ export default function MiniPlayer() {
     await setIgnoreCursorEventsWhenReady(false);
 
     const stopDragFromDocument = (upEvent: globalThis.MouseEvent) => {
-      if (upEvent.button === RIGHT_MOUSE_BUTTON) void stopRightButtonDrag();
+      if (upEvent.button === button) void stopManualWindowDrag();
     };
     const stopDragOnBlur = () => {
-      void stopRightButtonDrag();
+      void stopManualWindowDrag();
     };
 
     document.addEventListener("mouseup", stopDragFromDocument, { once: true });
@@ -421,6 +394,45 @@ export default function MiniPlayer() {
         await win.setPosition(new PhysicalPosition(nextX, nextY));
       })();
     }, 16);
+  };
+
+  const startNativeWindowDrag = async () => {
+    setIsDragging(true);
+    const stopNativeDrag = () => {
+      setIsDragging(false);
+      saveCurrentPositionSoon();
+    };
+    document.addEventListener("mouseup", stopNativeDrag, { once: true });
+    window.addEventListener("blur", stopNativeDrag, { once: true });
+
+    try {
+      await win.startDragging();
+      saveCurrentPositionSoon();
+    } catch (_) {
+      setIsDragging(false);
+    }
+  };
+
+  const handleContainerMouseDown = async (event: MouseEvent<HTMLDivElement>) => {
+    const isInteractiveTarget = event.target instanceof Element
+      && Boolean(event.target.closest(INTERACTIVE_SELECTOR));
+
+    if (event.button === RIGHT_MOUSE_BUTTON) {
+      event.preventDefault();
+      event.stopPropagation();
+      await startManualWindowDrag(RIGHT_MOUSE_BUTTON);
+      return;
+    }
+
+    if (event.button === LEFT_MOUSE_BUTTON && !isInteractiveTarget) {
+      event.preventDefault();
+      if (isWindows) {
+        await startManualWindowDrag(LEFT_MOUSE_BUTTON);
+        return;
+      }
+
+      await startNativeWindowDrag();
+    }
   };
 
   const handleMacPointerEnter = () => {
@@ -478,7 +490,7 @@ export default function MiniPlayer() {
         onMouseLeave={handleMacPointerLeave}
         onMouseDown={(event) => void handleContainerMouseDown(event)}
         onMouseUp={(event) => {
-          if (event.button === RIGHT_MOUSE_BUTTON) void stopRightButtonDrag();
+          if (event.button === RIGHT_MOUSE_BUTTON) void stopManualWindowDrag();
         }}
         onContextMenu={(event) => event.preventDefault()}
       >

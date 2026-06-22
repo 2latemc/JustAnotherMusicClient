@@ -5,6 +5,54 @@ type LogLevel = "debug" | "info" | "warn" | "error";
 const sessionId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 let sequence = 0;
 
+const SENSITIVE_KEY_PATTERN = /cookie|authorization|token|credential|secret|password|sapisid|apisid|sid|visitor|signature|cipher|url/i;
+
+function sanitizeString(value: string): string {
+  if (/^https?:\/\//i.test(value)) {
+    try {
+      const parsed = new URL(value);
+      return `${parsed.origin}${parsed.pathname}${parsed.search ? "?[redacted]" : ""}`;
+    } catch {
+      return "[redacted-url]";
+    }
+  }
+  return value
+    .replace(/(SAPISID|APISID|HSID|SSID|SID|LOGIN_INFO|VISITOR_INFO1_LIVE|__Secure-[^=;\s]+)=([^;\s]+)/gi, "$1=[redacted]")
+    .replace(/(Authorization:\s*)(Bearer\s+)?[^\s,}]+/gi, "$1[redacted]");
+}
+
+function sanitizeForLog(value: unknown, key = "", seen = new WeakSet<object>()): unknown {
+  if (SENSITIVE_KEY_PATTERN.test(key)) {
+    if (typeof value === "string" && /^https?:\/\//i.test(value)) {
+      return sanitizeString(value);
+    }
+    return "[redacted]";
+  }
+
+  if (typeof value === "string") return sanitizeString(value);
+  if (typeof value !== "object" || value === null) return value;
+  if (value instanceof Error) {
+    return {
+      name: value.name,
+      message: sanitizeString(value.message),
+      stack: value.stack ? sanitizeString(value.stack) : undefined,
+      cause: sanitizeForLog((value as { cause?: unknown }).cause, "cause", seen),
+    };
+  }
+  if (seen.has(value)) return "[Circular]";
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeForLog(item, key, seen));
+  }
+
+  const sanitized: Record<string, unknown> = {};
+  for (const [entryKey, entryValue] of Object.entries(value as Record<string, unknown>)) {
+    sanitized[entryKey] = sanitizeForLog(entryValue, entryKey, seen);
+  }
+  return sanitized;
+}
+
 function safeStringify(value: unknown, maxLen = 4000): string {
   const seen = new WeakSet<object>();
   const json = JSON.stringify(
@@ -75,7 +123,8 @@ function writeInternalLog(level: LogLevel, context: string, extra?: Record<strin
     context,
     ...extra,
   };
-  const payloadText = safeStringify(payload);
+  const safePayload = sanitizeForLog(payload);
+  const payloadText = safeStringify(safePayload);
   void invoke("frontend_log", {
     level,
     context,
@@ -85,21 +134,21 @@ function writeInternalLog(level: LogLevel, context: string, extra?: Record<strin
   });
 
   if (level === "debug") {
-    console.debug(`[internal][debug] ${context}`, payloadText, payload);
+    console.debug(`[internal][debug] ${context}`, payloadText, safePayload);
     return;
   }
 
   if (level === "info") {
-    console.info(`[internal][info] ${context}`, payloadText, payload);
+    console.info(`[internal][info] ${context}`, payloadText, safePayload);
     return;
   }
 
   if (level === "warn") {
-    console.warn(`[internal][warn] ${context}`, payloadText, payload);
+    console.warn(`[internal][warn] ${context}`, payloadText, safePayload);
     return;
   }
 
-  console.error(`[internal][error] ${context}`, payloadText, payload);
+  console.error(`[internal][error] ${context}`, payloadText, safePayload);
 }
 
 export function logInternalDebug(context: string, extra?: Record<string, unknown>) {

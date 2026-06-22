@@ -22,6 +22,58 @@ type MaybeInfo = {
   ) => unknown;
 };
 
+function summarizeFormat(format: unknown): Record<string, unknown> {
+  const item = format as {
+    itag?: number;
+    mime_type?: string;
+    bitrate?: number;
+    content_length?: string | number;
+    audio_channels?: number;
+    audio_sample_rate?: string | number;
+    audio_quality?: string;
+    approx_duration_ms?: string | number;
+    url?: string;
+    signature_cipher?: string;
+    cipher?: string;
+  } | null;
+
+  return {
+    itag: item?.itag ?? null,
+    mimeType: item?.mime_type ?? null,
+    bitrate: item?.bitrate ?? null,
+    contentLength: item?.content_length ?? null,
+    audioChannels: item?.audio_channels ?? null,
+    audioSampleRate: item?.audio_sample_rate ?? null,
+    audioQuality: item?.audio_quality ?? null,
+    approxDurationMs: item?.approx_duration_ms ?? null,
+    hasUrl: Boolean(item?.url),
+    hasSignatureCipher: Boolean(item?.signature_cipher),
+    hasCipher: Boolean(item?.cipher),
+  };
+}
+
+function summarizeMediaUrl(url: string | null | undefined): Record<string, unknown> {
+  if (!url) {
+    return { present: false };
+  }
+  try {
+    const parsed = new URL(url);
+    return {
+      present: true,
+      origin: parsed.origin,
+      path: parsed.pathname,
+      hasQuery: parsed.search.length > 0,
+      length: url.length,
+    };
+  } catch {
+    return {
+      present: true,
+      invalid: true,
+      length: url.length,
+    };
+  }
+}
+
 export class YouTubeDataSource extends DataSource {
   private ytPromise: Promise<Innertube> | null = null;
   private ytWebPromise: Promise<Innertube> | null = null;
@@ -79,23 +131,26 @@ export class YouTubeDataSource extends DataSource {
       const method = init?.method || 'GET';
       const headers = init?.headers || {};
       
-      // LOG EVERYTHING BEING SENT TO YOUTUBE
-      logInternalInfo("YOUTUBE API REQUEST - EVERYTHING", {
-        url: url,
+      logInternalInfo("YOUTUBE API REQUEST", {
+        request: summarizeMediaUrl(url),
         method: method,
-        headers: headers,
-        body: init?.body,
+        headerCount: headers instanceof Headers
+          ? Array.from(headers.keys()).length
+          : Array.isArray(headers)
+            ? headers.length
+            : Object.keys(headers as Record<string, unknown>).length,
+        hasBody: Boolean(init?.body),
         mode: init?.mode,
         credentials: init?.credentials,
         cache: init?.cache,
         redirect: init?.redirect,
         referrer: init?.referrer,
         referrerPolicy: init?.referrerPolicy,
-        integrity: init?.integrity,
-        keepalive: init?.signal,
+        hasIntegrity: Boolean(init?.integrity),
+        hasSignal: Boolean(init?.signal),
         timestamp: new Date().toISOString(),
         userAgent: typeof navigator !== "undefined" ? navigator.userAgent : undefined,
-        cookies: typeof document !== "undefined" ? document.cookie : undefined,
+        hasCookies: typeof document !== "undefined" && document.cookie.length > 0,
       });
       
       const startTime = Date.now();
@@ -105,50 +160,29 @@ export class YouTubeDataSource extends DataSource {
         const endTime = Date.now();
         const responseTime = endTime - startTime;
         
-        // LOG EVERYTHING RECEIVED FROM YOUTUBE
-        logInternalInfo("YOUTUBE API RESPONSE - EVERYTHING", {
-          requestUrl: url,
+        logInternalInfo("YOUTUBE API RESPONSE", {
+          request: summarizeMediaUrl(url),
           method: method,
           status: response.status,
           statusText: response.statusText,
           ok: response.ok,
-          headers: Object.fromEntries(response.headers.entries()),
+          headerKeys: Array.from(response.headers.keys()),
           type: response.type,
-          responseUrl: response.url,
+          response: summarizeMediaUrl(response.url),
           redirected: response.redirected,
           responseTime: responseTime,
           timestamp: new Date().toISOString(),
         });
-        
-        // Try to get response body for more details
-        try {
-          const clonedResponse = response.clone();
-          const text = await clonedResponse.text();
-          logInternalInfo("YOUTUBE API RESPONSE BODY - COMPLETE", {
-            url: url,
-            bodyLength: text.length,
-            bodyPreview: text.substring(0, 1000) + (text.length > 1000 ? "..." : ""),
-            bodyComplete: text,
-            timestamp: new Date().toISOString(),
-          });
-        } catch (bodyError) {
-          logInternalWarn("YOUTUBE API RESPONSE BODY - FAILED TO READ", {
-            url: url,
-            error: (bodyError as any)?.message || String(bodyError),
-            timestamp: new Date().toISOString(),
-          });
-        }
         
         return response;
       } catch (error) {
         const endTime = Date.now();
         const responseTime = endTime - startTime;
         
-        // LOG EVERYTHING ABOUT THE ERROR
-        logInternalError("YOUTUBE API ERROR - EVERYTHING", error as Error, {
-          url: url,
+        logInternalError("YOUTUBE API ERROR", error as Error, {
+          request: summarizeMediaUrl(url),
           method: method,
-          headers: headers,
+          hasHeaders: Boolean(headers),
           responseTime: responseTime,
           timestamp: new Date().toISOString(),
         });
@@ -234,27 +268,23 @@ export class YouTubeDataSource extends DataSource {
       
       const format = await yt.getStreamingData(trackId, { type: "audio", quality: "best" });
       
-      // LOG EVERYTHING - UNMODIFIED API RESPONSE
-      logInternalInfo("YouTubeDataSource.tryGetStreamingUrl COMPLETE API RESPONSE", {
+      logInternalInfo("YouTubeDataSource.tryGetStreamingUrl response", {
         trackId,
         client: clientLabel,
-        apiResponse: format,
-        apiResponseString: JSON.stringify(format, null, 2),
         responseType: typeof format,
         responseKeys: Object.keys(format),
         responseConstructor: format?.constructor?.name,
+        format: summarizeFormat(format),
       });
       
       const player = yt.session.player;
       
-      // LOG PLAYER STATE
       logInternalInfo("YouTubeDataSource.tryGetStreamingUrl PLAYER STATE", {
         trackId,
         client: clientLabel,
         hasPlayer: !!player,
         playerType: typeof player,
         playerKeys: player ? Object.keys(player) : [],
-        playerString: JSON.stringify(player, null, 2),
       });
       
       const decipheredUrl = await format.decipher(player);
@@ -337,8 +367,7 @@ export class YouTubeDataSource extends DataSource {
       if (url) {
         logInternalInfo("YouTubeDataSource.getStreamUrl success with music client", {
           trackId: track.id,
-          url: url.substring(0, 150) + "...",
-          urlLength: url.length,
+          mediaUrl: summarizeMediaUrl(url),
           client: "music",
         });
         return url;
@@ -359,8 +388,7 @@ export class YouTubeDataSource extends DataSource {
       if (url) {
         logInternalInfo("YouTubeDataSource.getStreamUrl success with web client", {
           trackId: track.id,
-          url: url.substring(0, 150) + "...",
-          urlLength: url.length,
+          mediaUrl: summarizeMediaUrl(url),
           client: "web",
         });
         return url;
@@ -382,8 +410,7 @@ export class YouTubeDataSource extends DataSource {
       if (url) {
         logInternalInfo("YouTubeDataSource.getStreamUrl success with tv client", {
           trackId: track.id,
-          url: url.substring(0, 150) + "...",
-          urlLength: url.length,
+          mediaUrl: summarizeMediaUrl(url),
           client: "tv",
         });
         return url;
@@ -405,8 +432,7 @@ export class YouTubeDataSource extends DataSource {
       if (url) {
         logInternalInfo("YouTubeDataSource.getStreamUrl success with android client", {
           trackId: track.id,
-          url: url.substring(0, 150) + "...",
-          urlLength: url.length,
+          mediaUrl: summarizeMediaUrl(url),
           client: "android",
         });
         return url;
@@ -430,8 +456,7 @@ export class YouTubeDataSource extends DataSource {
         if (url) {
           logInternalInfo("YouTubeDataSource.getStreamUrl web chooseFormat selected", {
             trackId: track.id,
-            url: url.substring(0, 150) + "...",
-            urlLength: url.length,
+            mediaUrl: summarizeMediaUrl(url),
             itag: (format as unknown as { itag?: number }).itag ?? null,
             hasPlayer: Boolean(ytWeb.session.player),
             client: "web-chooseFormat",
@@ -550,7 +575,6 @@ export class YouTubeDataSource extends DataSource {
         isLikelyAd: false,
       });
       
-      // LOG EVERYTHING ABOUT THE API CALL AND RESPONSE
       logInternalInfo(`YOUTUBE.JS API CALL - ${apiMethod}() - COMPLETE RESPONSE`, {
         trackId: track.id,
         clientLabel: clientLabel,
@@ -560,8 +584,6 @@ export class YouTubeDataSource extends DataSource {
         infoType: typeof info,
         infoConstructor: info.constructor.name,
         infoKeys: Object.keys(info),
-        infoPrototype: Object.getPrototypeOf(info),
-        infoComplete: JSON.stringify(info, null, 2),
         infoDetails: {
           hasBasicInfo: !!(info as any).basic_info,
           hasStreamingData: !!(info as any).streaming_data,
@@ -591,8 +613,7 @@ export class YouTubeDataSource extends DataSource {
         logInternalInfo(`YOUTUBE.JS CHOOSEFORMAT() - SUCCESS`, {
           trackId: track.id,
           clientLabel: clientLabel,
-          chosenFormat: format,
-          chosenFormatString: JSON.stringify(format, null, 2),
+          chosenFormat: summarizeFormat(format),
           hasUrl: !!format?.url,
           hasCipher: !!(format?.signature_cipher || format?.cipher),
         });
@@ -618,7 +639,7 @@ export class YouTubeDataSource extends DataSource {
           logInternalInfo(`MANUAL FORMAT SELECTION FALLBACK - FORMAT CHOSEN`, {
             trackId: track.id,
             clientLabel: clientLabel,
-            chosenFormat: format,
+            chosenFormat: summarizeFormat(format),
             hasUrl: !!format?.url,
             hasCipher: !!(format?.signature_cipher || format?.cipher),
           });
@@ -633,7 +654,6 @@ export class YouTubeDataSource extends DataSource {
         throw new Error("No audio formats found");
       }
       
-      // LOG EVERYTHING ABOUT THE SELECTED FORMAT
       logInternalInfo("YOUTUBE.JS API CALL - FORMAT SELECTED FROM getBasicInfo()", {
         trackId: track.id,
         clientLabel: clientLabel,
@@ -642,26 +662,11 @@ export class YouTubeDataSource extends DataSource {
         formatType: typeof format,
         formatConstructor: format?.constructor?.name,
         formatKeys: Object.keys(format),
-        formatPrototype: Object.getPrototypeOf(format),
-        formatComplete: JSON.stringify(format, null, 2),
-        formatDetails: {
-          hasUrl: !!(format as any).url,
-          hasSignatureCipher: !!(format as any).signature_cipher,
-          hasCipher: !!(format as any).cipher,
-          itag: (format as any).itag,
-          mimeType: (format as any).mime_type,
-          bitrate: (format as any).bitrate,
-          contentLength: (format as any).content_length,
-          audioChannels: (format as any).audio_channels,
-          audioSampleRate: (format as any).audio_sample_rate,
-          audioQuality: (format as any).audio_quality,
-          approxDurationMs: (format as any).approx_duration_ms,
-        }
+        formatDetails: summarizeFormat(format),
       });
       
       const player = yt.session.player;
       
-      // LOG PLAYER STATE COMPLETELY
       logInternalInfo("YouTubeDataSource.getStreamData COMPLETE PLAYER STATE", {
         trackId: track.id,
         clientLabel: clientLabel,
@@ -669,8 +674,6 @@ export class YouTubeDataSource extends DataSource {
         playerType: typeof player,
         playerConstructor: player?.constructor?.name,
         playerKeys: player ? Object.keys(player) : [],
-        playerString: JSON.stringify(player, null, 2),
-        playerPrototype: player ? Object.getPrototypeOf(player) : null,
       });
       
       // Check format for direct URL or cipher before attempting deciphering
@@ -683,22 +686,18 @@ export class YouTubeDataSource extends DataSource {
         logInternalInfo("YouTubeDataSource.getStreamData FOUND DIRECT URL - USING DIRECTLY", {
           trackId: track.id,
           clientLabel: clientLabel,
-          directUrl: directUrl,
-          urlLength: directUrl?.length || 0,
+          mediaUrl: summarizeMediaUrl(directUrl),
           bypassDeciphering: true,
         });
         
         // Use direct URL without deciphering
         const decipheredUrl = directUrl;
         
-        // LOG DECIPHERED URL COMPLETELY (actually direct URL)
         logInternalInfo("YouTubeDataSource.getStreamData DECIPHERED URL COMPLETE", {
           trackId: track.id,
           clientLabel: clientLabel,
-          decipheredUrl: decipheredUrl,
-          urlLength: decipheredUrl?.length || 0,
+          mediaUrl: summarizeMediaUrl(decipheredUrl),
           urlType: typeof decipheredUrl,
-          urlPreview: decipheredUrl?.substring(0, 200) + "...",
           urlContainsSignature: decipheredUrl?.includes('signature') || decipheredUrl?.includes('sig'),
           urlContainsIp: decipheredUrl?.match(/\d+\.\d+\.\d+\.\d+/) ? true : false,
           urlProtocol: decipheredUrl?.startsWith('https://') ? 'https' : decipheredUrl?.startsWith('http://') ? 'http' : 'other',
@@ -716,7 +715,8 @@ export class YouTubeDataSource extends DataSource {
         logInternalInfo("FOUND SIGNATURE CIPHER - ATTEMPTING DECIPHER", {
           trackId: track.id,
           clientLabel: clientLabel,
-          signatureCipher: formatAny.signature_cipher || formatAny.cipher,
+          hasSignatureCipher: Boolean(formatAny.signature_cipher),
+          hasCipher: Boolean(formatAny.cipher),
         });
       }
       
@@ -728,7 +728,7 @@ export class YouTubeDataSource extends DataSource {
         logInternalInfo("YouTubeDataSource.getStreamData DECIPHER SUCCESS", {
           trackId: track.id,
           clientLabel: clientLabel,
-          decipheredUrl: decipheredUrl,
+          mediaUrl: summarizeMediaUrl(decipheredUrl),
         });
       } catch (decipherError: any) {
         logInternalError("YouTubeDataSource.getStreamData DECIPHER FAILED", decipherError, {
@@ -744,7 +744,7 @@ export class YouTubeDataSource extends DataSource {
           logInternalInfo("YouTubeDataSource.getStreamData FALLBACK TO DIRECT URL", {
             trackId: track.id,
             clientLabel: clientLabel,
-            directUrl: directUrl,
+            mediaUrl: summarizeMediaUrl(directUrl),
           });
           decipheredUrl = directUrl;
         } else {
@@ -768,7 +768,7 @@ export class YouTubeDataSource extends DataSource {
       logInternalInfo("YouTubeDataSource.getStreamData starting download", {
         trackId,
         clientLabel,
-        url: decipheredUrl.substring(0, 150) + "...",
+        mediaUrl: summarizeMediaUrl(decipheredUrl),
       });
       
       // Use YouTube.js's internal fetch which handles authentication properly

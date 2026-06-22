@@ -4,12 +4,22 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use portpicker::pick_unused_port;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs;
+use std::fmt;
+use std::fs::{self, File, OpenOptions};
+use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+macro_rules! eprintln {
+    ($($arg:tt)*) => {{
+        let message = $crate::sanitize_log_message(&format!($($arg)*));
+        std::eprintln!("{}", message);
+        $crate::append_log_line(format_args!("{}", message));
+    }};
+}
 
 #[cfg(not(debug_assertions))]
 use tauri::utils::config::FrontendDist;
@@ -48,6 +58,9 @@ const MACOS_LOGIN_USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_
 const YOUTUBE_COOKIE_CHUNK_SIZE: usize = 900;
 const YOUTUBE_COOKIE_MAX_CHUNKS: usize = 16;
 const DEFAULT_CACHE_MAX_BYTES: u64 = 4 * 1024 * 1024 * 1024;
+const CURRENT_LOG_FILE_NAME: &str = "current.log";
+
+static APP_LOG_FILE: OnceLock<Mutex<Option<File>>> = OnceLock::new();
 
 struct CacheLock(Mutex<()>);
 struct AppSettingsLock(Mutex<()>);
@@ -203,6 +216,152 @@ fn app_setting_remove(
     let mut settings = read_app_settings(&app)?;
     settings.remove(&key);
     write_json_file(&app_settings_path(&app)?, &settings)
+}
+
+fn current_log_path(app: &tauri::AppHandle) -> Result<PathBuf, CommandError> {
+    app.path()
+        .app_log_dir()
+        .map(|path| path.join(CURRENT_LOG_FILE_NAME))
+        .map_err(|error| CommandError {
+            message: format!("log directory unavailable: {error}"),
+        })
+}
+
+fn initialize_app_log(app: &tauri::AppHandle) -> Result<(), CommandError> {
+    let log_path = current_log_path(app)?;
+    let log_dir = log_path.parent().ok_or_else(|| CommandError {
+        message: "log directory unavailable".to_string(),
+    })?;
+
+    fs::create_dir_all(log_dir).map_err(|error| CommandError {
+        message: format!("log directory creation failed: {error}"),
+    })?;
+
+    if let Ok(entries) = fs::read_dir(log_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path != log_path
+                && path
+                    .extension()
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("log"))
+            {
+                let _ = fs::remove_file(path);
+            }
+        }
+    }
+
+    let file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&log_path)
+        .map_err(|error| CommandError {
+            message: format!("log file creation failed: {error}"),
+        })?;
+
+    let log_file = APP_LOG_FILE.get_or_init(|| Mutex::new(None));
+    if let Ok(mut guard) = log_file.lock() {
+        *guard = Some(file);
+    }
+
+    append_log_line(format_args!(
+        "[internal][tauri][info] log initialized path={}",
+        log_path.display()
+    ));
+    Ok(())
+}
+
+pub(crate) fn append_log_line(args: fmt::Arguments<'_>) {
+    let Some(log_file) = APP_LOG_FILE.get() else {
+        return;
+    };
+    let Ok(mut guard) = log_file.lock() else {
+        return;
+    };
+    let Some(file) = guard.as_mut() else {
+        return;
+    };
+    let _ = writeln!(file, "{args}");
+}
+
+pub(crate) fn sanitize_log_message(message: &str) -> String {
+    message
+        .split_whitespace()
+        .map(sanitize_log_token)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn sanitize_log_token(token: &str) -> String {
+    if let Some((key, value)) = token.split_once('=') {
+        let normalized_key = key
+            .trim_matches(|character: char| !character.is_ascii_alphanumeric() && character != '_')
+            .to_ascii_lowercase();
+        if normalized_key.contains("cookie")
+            || normalized_key.contains("authorization")
+            || normalized_key.contains("credential")
+            || normalized_key.contains("token")
+            || normalized_key.contains("secret")
+            || normalized_key.contains("password")
+            || normalized_key.contains("signature")
+            || normalized_key.contains("cipher")
+            || normalized_key.contains("visitor")
+        {
+            return format!("{key}=[redacted]");
+        }
+        if value.starts_with("http://") || value.starts_with("https://") {
+            return format!("{key}={}", sanitize_log_url(value));
+        }
+    }
+
+    if token.starts_with("http://") || token.starts_with("https://") {
+        return sanitize_log_url(token);
+    }
+
+    token.to_string()
+}
+
+fn sanitize_log_url(value: &str) -> String {
+    match url::Url::parse(value) {
+        Ok(mut parsed) => {
+            parsed.set_query(None);
+            parsed.set_fragment(None);
+            format!(
+                "{}{}",
+                parsed.as_str().trim_end_matches('/'),
+                if value.contains('?') { "?[redacted]" } else { "" }
+            )
+        }
+        Err(_) => "[redacted-url]".to_string(),
+    }
+}
+
+#[tauri::command]
+fn open_current_log(app: tauri::AppHandle) -> Result<(), CommandError> {
+    let log_path = current_log_path(&app)?;
+    if !log_path.exists() {
+        initialize_app_log(&app)?;
+    }
+    tauri_plugin_opener::open_path(&log_path, None::<&str>).map_err(|error| CommandError {
+        message: format!("unable to open log file: {error}"),
+    })
+}
+
+#[tauri::command]
+fn app_settings_clear(
+    app: tauri::AppHandle,
+    lock: tauri::State<'_, AppSettingsLock>,
+) -> Result<(), CommandError> {
+    let _guard = lock.0.lock().map_err(|_| CommandError {
+        message: "application settings lock unavailable".to_string(),
+    })?;
+    let path = app_settings_path(&app)?;
+    if path.exists() {
+        fs::remove_file(path).map_err(|error| CommandError {
+            message: format!("application settings clear failed: {error}"),
+        })?;
+    }
+    Ok(())
 }
 
 fn read_cache_settings(app: &tauri::AppHandle) -> Result<CacheSettings, CommandError> {
@@ -935,42 +1094,6 @@ fn collect_json_renderer_counts(value: &serde_json::Value, counts: &mut HashMap<
     }
 }
 
-fn collect_message_text(value: &serde_json::Value, messages: &mut Vec<String>) {
-    match value {
-        serde_json::Value::Object(object) => {
-            if let Some(renderer) = object
-                .get("messageRenderer")
-                .and_then(|value| value.as_object())
-            {
-                for field in ["text", "subtext"] {
-                    if let Some(runs) = renderer
-                        .get(field)
-                        .and_then(|value| value.get("runs"))
-                        .and_then(|value| value.as_array())
-                    {
-                        let text = runs
-                            .iter()
-                            .filter_map(|run| run.get("text").and_then(|value| value.as_str()))
-                            .collect::<String>();
-                        if !text.is_empty() {
-                            messages.push(text);
-                        }
-                    }
-                }
-            }
-            for child in object.values() {
-                collect_message_text(child, messages);
-            }
-        }
-        serde_json::Value::Array(items) => {
-            for item in items {
-                collect_message_text(item, messages);
-            }
-        }
-        _ => {}
-    }
-}
-
 #[tauri::command]
 async fn fetch_audio_bytes(url: String, track_id: String) -> Result<Vec<u8>, CommandError> {
     let started_at = Instant::now();
@@ -1228,12 +1351,10 @@ async fn try_youtube_api(
         .unwrap_or_default();
 
     eprintln!(
-        "[internal][tauri][debug] YOUTUBE API REQUEST - {} - URL: {}",
-        attempt_name, api_url
-    );
-    eprintln!(
-        "[internal][tauri][debug] YOUTUBE API REQUEST - {} - BODY: {}",
-        attempt_name, request_body_str
+        "[internal][tauri][debug] YOUTUBE API REQUEST - {} url={} body_bytes={}",
+        attempt_name,
+        api_url,
+        request_body_str.len()
     );
 
     let response = client
@@ -1264,23 +1385,10 @@ async fn try_youtube_api(
         });
     }
 
-    // LOG THE ENTIRE YOUTUBE API RESPONSE
     eprintln!(
-        "[internal][tauri][debug] YOUTUBE API RESPONSE - {} - START",
-        attempt_name
-    );
-    eprintln!(
-        "[internal][tauri][debug] YOUTUBE API RESPONSE - {} - RAW RESPONSE LENGTH: {}",
+        "[internal][tauri][debug] YOUTUBE API RESPONSE - {} - response_bytes={}",
         attempt_name,
         response_text.len()
-    );
-    eprintln!(
-        "[internal][tauri][debug] YOUTUBE API RESPONSE - {} - COMPLETE RESPONSE TEXT:\n{}",
-        attempt_name, response_text
-    );
-    eprintln!(
-        "[internal][tauri][debug] YOUTUBE API RESPONSE - {} - END",
-        attempt_name
     );
 
     let response_json: serde_json::Value =
@@ -1308,35 +1416,41 @@ async fn try_youtube_api(
 
     // Check for playability status first
     if let Some(playability_status) = response_json.get("playabilityStatus") {
+        let status = playability_status
+            .get("status")
+            .and_then(|value| value.as_str())
+            .unwrap_or("unknown");
+        let reason = playability_status
+            .get("reason")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
         eprintln!(
-            "[internal][tauri][debug] YOUTUBE API RESPONSE - {} - PLAYABILITY STATUS: {}",
-            attempt_name,
-            serde_json::to_string_pretty(playability_status).unwrap_or_default()
+            "[internal][tauri][debug] YOUTUBE API RESPONSE - {} - PLAYABILITY STATUS status={} has_reason={}",
+            attempt_name, status, !reason.is_empty()
         );
 
-        if let Some(status) = playability_status.get("status").and_then(|s| s.as_str()) {
-            if status != "OK" {
-                let reason = playability_status
-                    .get("reason")
-                    .and_then(|r| r.as_str())
-                    .unwrap_or("Unknown reason");
-                eprintln!(
-                    "[internal][tauri][warn] YOUTUBE API RESPONSE - {} - VIDEO NOT PLAYABLE: status={}, reason={}",
-                    attempt_name, status, reason
-                );
-                return Err(CommandError {
-                    message: format!("video not playable: {} - {}", status, reason),
-                });
-            }
+        if status != "OK" {
+            eprintln!(
+                "[internal][tauri][warn] YOUTUBE API RESPONSE - {} - VIDEO NOT PLAYABLE: status={} has_reason={}",
+                attempt_name, status, !reason.is_empty()
+            );
+            return Err(CommandError {
+                message: format!("video not playable: {status}"),
+            });
         }
     }
 
     // Check for video details
     if let Some(video_details) = response_json.get("videoDetails") {
+        let duration_seconds = video_details
+            .get("lengthSeconds")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
         eprintln!(
-            "[internal][tauri][debug] YOUTUBE API RESPONSE - {} - VIDEO DETAILS: {}",
+            "[internal][tauri][debug] YOUTUBE API RESPONSE - {} - VIDEO DETAILS has_title={} duration_seconds={}",
             attempt_name,
-            serde_json::to_string_pretty(video_details).unwrap_or_default()
+            video_details.get("title").is_some(),
+            duration_seconds
         );
     }
 
@@ -1366,16 +1480,6 @@ async fn try_youtube_api(
                         attempt_name,
                         formats_array.len()
                     );
-
-                    // Log first few formats in detail
-                    for (i, format) in formats_array.iter().take(5).enumerate() {
-                        eprintln!(
-                            "[internal][tauri][debug] YOUTUBE API RESPONSE - {} - FORMAT {}: {}",
-                            attempt_name,
-                            i,
-                            serde_json::to_string_pretty(format).unwrap_or_default()
-                        );
-                    }
 
                     // Count audio vs video formats
                     let mut audio_count = 0;
@@ -1657,23 +1761,20 @@ async fn proxy_http_request(
                 .unwrap_or_default();
             let mut renderer_counts = HashMap::new();
             collect_json_renderer_counts(&json, &mut renderer_counts);
-            let mut messages = Vec::new();
-            collect_message_text(&json, &mut messages);
             eprintln!(
-                "[internal][tauri][debug] proxy_http_request browse_shape top_level_keys={:?} renderer_counts={:?} messages={:?}",
-                top_level_keys, renderer_counts, messages
+                "[internal][tauri][debug] proxy_http_request browse_shape top_level_keys={:?} renderer_counts={:?}",
+                top_level_keys, renderer_counts
             );
         }
     }
 
     if status >= 400 {
-        let error_body = String::from_utf8_lossy(&body);
         eprintln!(
-            "[internal][tauri][warn] proxy_http_request error_body method={} url={} status={} body={}",
+            "[internal][tauri][warn] proxy_http_request error_response method={} url={} status={} bytes={}",
             input.method,
             request_target,
             status,
-            error_body.chars().take(1000).collect::<String>()
+            body.len()
         );
     }
 
@@ -1785,6 +1886,12 @@ pub fn run() {
     let builder = builder.manage(windows_media::WindowsMediaSession::new());
 
     builder
+        .setup(|app| {
+            if let Err(error) = initialize_app_log(app.handle()) {
+                std::eprintln!("[internal][tauri][warn] {}", error.message);
+            }
+            Ok(())
+        })
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {
                 eprintln!(
@@ -1832,6 +1939,8 @@ pub fn run() {
             app_setting_get,
             app_setting_set,
             app_setting_remove,
+            app_settings_clear,
+            open_current_log,
             fetch_audio_bytes,
             fetch_youtube_music_audio,
             proxy_http_request,

@@ -617,7 +617,8 @@ export class PlayerController {
       logInternalError("PlayerController.ensureTrackLoaded failed", error, {
         trackId: track.id,
       });
-      throw new Error("Unable to load audio data for playback.");
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(`Unable to load audio data for playback. ${detail}`);
     }
   }
 
@@ -644,10 +645,13 @@ export class PlayerController {
       status: this.state.status,
       trackId: this.state.currentTrack?.id,
     });
+    const detail = error instanceof Error ? error.message : String(error);
 
     this.setState({
       status: "error",
-      error: "Playback failed. Check internal logs for details.",
+      error: detail && detail !== "[object Object]"
+        ? `Playback failed. ${detail}`
+        : "Playback failed. Check internal logs for details.",
       // Preserve currentTrack to prevent reversion to hardcoded track
       currentTrack: this.state.currentTrack,
     });

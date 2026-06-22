@@ -21,9 +21,6 @@ A desktop YouTube Music client built with Tauri, React, and TypeScript for **Win
 
 > **IMPORTANT** This is an independent, unofficial project and is not affiliated with, authorized by, sponsored by, or endorsed by YouTube or Google. The only reason I am making this, is becuase there is no official YouTube music desktop client. 
 
-
-<br>
-
 <br>
 <p align="center">
  <a href="https://ko-fi.com/totally2late">

@@ -195,6 +195,13 @@ const LIBRARY_CACHE_KEY = "youtube-music:library:v5";
 const ARTIST_CACHE_VERSION = "v3";
 const ARTIST_SUBSCRIPTION_OVERRIDE_MS = 60_000;
 
+class YouTubeMusicAuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "YouTubeMusicAuthError";
+  }
+}
+
 export class YouTubeMusicDataSource extends DataSource {
   private musicClientPromise: Promise<Innertube> | null = null;
   private webClientPromise: Promise<Innertube> | null = null;
@@ -231,30 +238,32 @@ export class YouTubeMusicDataSource extends DataSource {
     };
   }
 
-  private getSessionOptions() {
+  private getSessionOptions(retrievePlayer = true) {
     return {
       fetch: tauriFetch,
       user_agent: typeof navigator !== "undefined" ? navigator.userAgent : undefined,
       cookie: this.musicCookie ?? (typeof document !== "undefined" ? document.cookie : undefined),
       account_index: this.musicAccountIndex,
       on_behalf_of_user: this.musicOnBehalfOfUser ?? undefined,
-      retrieve_player: true,
+      retrieve_player: retrievePlayer,
       generate_session_locally: true,
     } as const;
+  }
+
+  private async createMusicClient(retrievePlayer = true): Promise<Innertube> {
+    const client = await Innertube.create({
+      ...this.getSessionOptions(retrievePlayer),
+      client_type: ClientType.MUSIC,
+    });
+    await this.refreshMusicClientMetadata(client);
+    this.applyDelegationContext(client);
+    return client;
   }
 
   private getMusicClient(): Promise<Innertube> {
     if (!this.musicClientPromise) {
       logInternalInfo("YouTubeMusicDataSource.getMusicClient creating client");
-      this.musicClientPromise = Innertube.create({
-          ...this.getSessionOptions(),
-          client_type: ClientType.MUSIC,
-        })
-        .then(async (client) => {
-          await this.refreshMusicClientMetadata(client);
-          this.applyDelegationContext(client);
-          return client;
-        });
+      this.musicClientPromise = this.createMusicClient(true);
     }
 
     return this.musicClientPromise;
@@ -1258,7 +1267,7 @@ export class YouTubeMusicDataSource extends DataSource {
     const found: {
       endpoint: {
         payload?: { continuation?: string };
-        call(actions: Innertube["actions"], args: { client: string; parse: true }): Promise<unknown>;
+        call(actions: Innertube["actions"], args: { parse: true }): Promise<unknown>;
       } | null;
     } = {
       endpoint: null,
@@ -1272,8 +1281,8 @@ export class YouTubeMusicDataSource extends DataSource {
 
       if (value instanceof YTNodes.ContinuationItem) {
         found.endpoint = value.endpoint as {
-      payload?: { continuation?: string };
-      call(actions: Innertube["actions"], args: { client: string; parse: true }): Promise<unknown>;
+          payload?: { continuation?: string };
+          call(actions: Innertube["actions"], args: { parse: true }): Promise<unknown>;
         };
         return;
       }
@@ -1303,7 +1312,7 @@ export class YouTubeMusicDataSource extends DataSource {
       const key = endpoint.payload?.continuation || `endpoint:${JSON.stringify(endpoint.payload ?? {})}`;
       return {
         key,
-        load: () => endpoint.call(client.actions, { client: "YTMUSIC", parse: true }),
+        load: () => endpoint.call(client.actions, { parse: true }),
       };
     }
 
@@ -1312,7 +1321,6 @@ export class YouTubeMusicDataSource extends DataSource {
       return {
         key: continuation,
         load: () => this.executeMusicBrowse(client, {
-          client: "YTMUSIC",
           continuation,
         }),
       };
@@ -1392,40 +1400,38 @@ export class YouTubeMusicDataSource extends DataSource {
   }
 
   private async collectPlaylistTracks(client: Innertube, playlistId: string): Promise<Track[]> {
-    const items: MusicItem[] = [];
-    const seenPages = new Set<string>();
-    let page = await client.music.getPlaylist(playlistId);
+    const browseId = playlistId.startsWith("VL") ? playlistId : `VL${playlistId}`;
+    let page = await this.executeMusicBrowse(client, { browseId });
     let pageCount = 0;
+    const items: MusicItem[] = [];
+    const seenContinuations = new Set<string>();
 
     while (true) {
-      const pageItems = page.items
-        .filterType(YTNodes.MusicResponsiveListItem)
-        .filter((item) => item.item_type === "song" || item.item_type === "video");
-      items.push(...pageItems as unknown as MusicItem[]);
+      const pageItems = this.collectMusicItems(page, new Set(["song", "video"]));
+      items.push(...pageItems);
       pageCount += 1;
 
-      const pageKey = pageItems
-        .map((item) => item.id)
-        .filter(Boolean)
-        .join(",");
-      if (seenPages.has(pageKey)) {
+      const continuation = this.getMusicContinuation(client, page);
+      if (!continuation) break;
+      if (seenContinuations.has(continuation.key)) {
         logInternalWarn("YouTubeMusicDataSource.collectPlaylistTracks repeated page", {
           playlistId,
           pageCount,
+          continuationKey: continuation.key,
         });
         break;
       }
-      seenPages.add(pageKey);
 
-      if (!page.has_continuation) break;
-      page = await page.getContinuation();
+      seenContinuations.add(continuation.key);
+      page = await continuation.load();
     }
 
-    const tracks = items
-      .map((item) => this.toTrack(item))
-      .filter((item): item is Track => Boolean(item));
+    const tracks = this.uniqueById(
+      items.map((item) => this.toTrack(item)).filter((item): item is Track => Boolean(item)),
+    );
     logInternalInfo("YouTubeMusicDataSource.collectPlaylistTracks complete", {
       playlistId,
+      browseId,
       pageCount,
       trackCount: tracks.length,
     });
@@ -1651,6 +1657,23 @@ export class YouTubeMusicDataSource extends DataSource {
     return albumCount + playlistCount + recentCount - messages * 10;
   }
 
+  private getLibraryAuthFailureMessage(libraryLanding: unknown, historyResponse: unknown): string | null {
+    const libraryMessages = this.getResponseMessages(libraryLanding);
+    const historyMessages = this.getResponseMessages(historyResponse);
+    const allMessages = [...libraryMessages, ...historyMessages];
+    const signedOutMessages = allMessages.filter((message) =>
+      /sign in|explore your favorites|looking for what/i.test(message)
+    );
+    if (signedOutMessages.length === 0) return null;
+
+    return [
+      "YouTube Music did not accept the saved sign-in session for library sync.",
+      `Account tried: ${this.musicAccountName} (authuser ${this.musicAccountIndex}).`,
+      `YouTube response: ${signedOutMessages.join(" / ")}.`,
+      "Please sign out, sign in again, and make sure the login window lands on music.youtube.com before it closes.",
+    ].join(" ");
+  }
+
   private async getAccountCandidates(client: Innertube): Promise<AccountCandidate[]> {
     const fallback: AccountCandidate = { accountIndex: 0, name: "YouTube Music", selected: true };
     try {
@@ -1721,7 +1744,12 @@ export class YouTubeMusicDataSource extends DataSource {
     }
   }
 
-  private async useAccountCandidate(candidate: AccountCandidate): Promise<Innertube> {
+  private async useAccountCandidate(
+    candidate: AccountCandidate,
+    options: { cacheClient?: boolean; retrievePlayer?: boolean } = {},
+  ): Promise<Innertube> {
+    const cacheClient = options.cacheClient ?? true;
+    const retrievePlayer = options.retrievePlayer ?? true;
     const changed = this.musicAccountIndex !== candidate.accountIndex
       || this.musicOnBehalfOfUser !== (candidate.onBehalfOfUser ?? null)
       || this.musicSerializedDelegationContext !== (candidate.serializedDelegationContext ?? null);
@@ -1732,6 +1760,9 @@ export class YouTubeMusicDataSource extends DataSource {
     if (changed) {
       this.musicClientPromise = null;
       this.webClientPromise = null;
+    }
+    if (!cacheClient) {
+      return this.createMusicClient(retrievePlayer);
     }
     return this.getMusicClient();
   }
@@ -1783,7 +1814,10 @@ export class YouTubeMusicDataSource extends DataSource {
       if (key === bestKey) continue;
 
       try {
-        const client = await this.useAccountCandidate(candidate);
+        const client = await this.useAccountCandidate(candidate, {
+          cacheClient: false,
+          retrievePlayer: false,
+        });
         const { libraryLanding, historyResponse } = await this.loadLibraryResponses(client);
         const signal = this.getLibrarySignal(libraryLanding, historyResponse);
         if (signal > bestSignal || (signal === bestSignal && candidate.selected && !best.account.selected)) {
@@ -1935,6 +1969,10 @@ export class YouTubeMusicDataSource extends DataSource {
     client = bestLibrary.client;
     const { libraryLanding, historyResponse } = bestLibrary;
     const libraryMessages = this.getResponseMessages(libraryLanding);
+    const authFailureMessage = this.getLibraryAuthFailureMessage(libraryLanding, historyResponse);
+    if (authFailureMessage && this.getLibrarySignal(libraryLanding, historyResponse) <= 0) {
+      throw new YouTubeMusicAuthError(authFailureMessage);
+    }
 
     const [albumLibrary, playlistLibrary] = await Promise.all([
       this.applyLibraryFilter(client, libraryLanding, "Albums"),
@@ -1957,7 +1995,9 @@ export class YouTubeMusicDataSource extends DataSource {
     );
 
     if (libraryMessages.length > 0 && albums.length === 0) {
-      throw new Error(`YouTube Music returned an account message: ${libraryMessages.join(" ")}`);
+      throw new YouTubeMusicAuthError(
+        authFailureMessage ?? `YouTube Music returned an account message: ${libraryMessages.join(" ")}`,
+      );
     }
 
     logInternalInfo("YouTubeMusicDataSource.getLibrary success", {
