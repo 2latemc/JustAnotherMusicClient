@@ -9,7 +9,7 @@
     <a href="https://github.com/2latemc/JustAnotherMusicClient/releases/latest"><img src="https://img.shields.io/github/package-json/v/2latemc/JustAnotherMusicClient?style=for-the-badge&color=ff3d00&label=version" alt="Version">
     <a href="https://github.com/2latemc/JustAnotherMusicClient/blob/main/LICENSE"><img src="https://img.shields.io/github/license/2latemc/JustAnotherMusicClient?style=for-the-badge&color=ff6900" alt="License">
     <a href="https://github.com/2latemc/JustAnotherMusicClient/"><img src="https://img.shields.io/github/stars/2latemc/JustAnotherMusicClient?style=for-the-badge&color=ff9700&label=stars" alt="Stars">
-    <img src="https://img.shields.io/badge/reddit-orange?style=for-the-badge&logo=reddit&logoColor=black&link=https%3A%2F%2Fwww.reddit.com%2Fr%2FJustAnotherMusicC%2F" alt="Reddit">
+     <a href="https://www.reddit.com/r/JustAnotherMusicC/"><img src="https://img.shields.io/badge/reddit-orange?style=for-the-badge&logo=reddit&logoColor=black&link=https%3A%2F%2Fwww.reddit.com%2Fr%2FJustAnotherMusicC%2F" alt="Reddit">
   </p> 
   
 </p>
