@@ -6,6 +6,7 @@ import type {
   AuthPrompt,
   LibrarySnapshot,
   Playlist,
+  TrackPage,
   Track,
 } from "../datasource/types";
 import { logInternalError, logInternalInfo } from "../internal/logging";
@@ -274,6 +275,19 @@ export class LibraryController {
   async getPlaylistTracks(playlist: Playlist, onUpdate?: (tracks: Track[]) => void): Promise<Track[]> {
     if (!this.dataSource.getPlaylistTracks) return [];
     return this.dataSource.getPlaylistTracks(playlist, onUpdate);
+  }
+
+  async getPlaylistTrackPage(
+    playlist: Playlist,
+    pageKey?: string,
+    onUpdate?: (page: TrackPage) => void,
+  ): Promise<TrackPage> {
+    if (!this.dataSource.getPlaylistTrackPage) {
+      const tracks = pageKey ? [] : await this.getPlaylistTracks(playlist);
+      if (tracks.length > 0) onUpdate?.({ tracks, hasMore: false });
+      return { tracks, hasMore: false };
+    }
+    return this.dataSource.getPlaylistTrackPage(playlist, pageKey, onUpdate);
   }
 
   async getRecommendations(seed: Track): Promise<Track[]> {

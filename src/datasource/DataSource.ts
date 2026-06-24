@@ -6,6 +6,7 @@ import type {
   Lyrics,
   Playlist,
   SearchResults,
+  TrackPage,
   Track,
 } from "./types";
 
@@ -31,6 +32,11 @@ export abstract class DataSource {
   getArtist?(artistId: string, onUpdate?: (artist: ArtistPage) => void): Promise<ArtistPage>;
   setArtistSubscribed?(artistId: string, subscribed: boolean): Promise<void>;
   getPlaylistTracks?(playlist: Playlist, onUpdate?: (tracks: Track[]) => void): Promise<Track[]>;
+  getPlaylistTrackPage?(
+    playlist: Playlist,
+    pageKey?: string,
+    onUpdate?: (page: TrackPage) => void,
+  ): Promise<TrackPage>;
   setPlaylistSaved?(playlist: Playlist, saved: boolean): Promise<void>;
   addTrackToPlaylist?(
     track: Track,

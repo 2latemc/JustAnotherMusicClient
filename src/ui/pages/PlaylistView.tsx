@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   IconArrowDown,
   IconArrowUp,
@@ -12,7 +12,6 @@ import type { PlayerControllerActions } from "../../player/playerStore";
 import { markPlaylistPlayed } from "../../player/recentPlaylists";
 import { shuffleTracks } from "../../player/shuffleTracks";
 import { useTrackContextMenu } from "../components/TrackContextMenu";
-import { useLibraryState } from "../../player/playerStore";
 import styles from "./AlbumView.module.css";
 import { ArtistLinks } from "../components/ArtistLinks";
 import { usePlaylistContextMenu } from "../components/PlaylistContextMenu";
@@ -51,40 +50,65 @@ function SortDirectionIcon({ direction }: { direction: SortDirection }) {
     : <IconArrowDown size={13} stroke={2.2} aria-hidden="true" />;
 }
 
+function appendUniqueTracks(current: Track[], next: Track[]): Track[] {
+  if (next.length === 0) return current;
+  const existingIds = new Set(current.map((track) => track.id));
+  const uniqueNext = next.filter((track) => {
+    if (existingIds.has(track.id)) return false;
+    existingIds.add(track.id);
+    return true;
+  });
+  return uniqueNext.length > 0 ? [...current, ...uniqueNext] : current;
+}
+
 export function PlaylistView({ playlist, playerController, libraryController }: PlaylistViewProps) {
   const { openTrackMenu } = useTrackContextMenu();
   const { openPlaylistMenu } = usePlaylistContextMenu();
-  const libraryState = useLibraryState();
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMoreTracks, setHasMoreTracks] = useState(false);
+  const [nextPageKey, setNextPageKey] = useState<string | undefined>();
   const [error, setError] = useState<string | null>(null);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [sort, setSort] = useState<PlaylistSort>("dateAdded");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const playlistIdRef = useRef<string | undefined>(undefined);
+  const isLoadingMoreRef = useRef(false);
+
+  playlistIdRef.current = playlist?.id;
+  isLoadingMoreRef.current = isLoadingMore;
 
   useEffect(() => {
     if (!playlist) return;
     let active = true;
-    const isLikedSongs = playlist.kind === "liked-songs" || playlist.id === "LM";
     setSort("dateAdded");
     setSortDirection("desc");
-    const currentLibrary = libraryController.getState().library;
-    if (isLikedSongs && currentLibrary) {
-      setTracks(currentLibrary.likedSongs);
-      setIsLoading(false);
-      setError(null);
-      return;
-    }
     setTracks([]);
     setIsLoading(true);
+    setIsLoadingMore(false);
+    setHasMoreTracks(false);
+    setNextPageKey(undefined);
     setError(null);
-    void libraryController.getPlaylistTracks(playlist, (updatedTracks) => {
-      if (active) setTracks(updatedTracks);
+    setLoadMoreError(null);
+    let showedPage = false;
+    const showPage = (page: { tracks: Track[]; hasMore: boolean; nextPageKey?: string }) => {
+      if (!active) return;
+      showedPage = true;
+      setTracks(page.tracks);
+      setHasMoreTracks(page.hasMore);
+      setNextPageKey(page.nextPageKey);
+      setIsLoading(false);
+    };
+    void libraryController.getPlaylistTrackPage(playlist, undefined, (page) => {
+      if (page.tracks.length > 0) showPage(page);
     })
-      .then((items) => {
-        if (active) setTracks(items);
+      .then((page) => {
+        showPage(page);
       })
       .catch(() => {
-        if (active) setError("Unable to load this playlist.");
+        if (active && !showedPage) setError("Unable to load this playlist.");
       })
       .finally(() => {
         if (active) setIsLoading(false);
@@ -94,12 +118,49 @@ export function PlaylistView({ playlist, playerController, libraryController }: 
     };
   }, [playlist, libraryController]);
 
+  const loadMoreTracks = useCallback(async () => {
+    if (!playlist || !hasMoreTracks || !nextPageKey || isLoading || isLoadingMoreRef.current) return;
+    const loadingPlaylistId = playlist.id;
+    isLoadingMoreRef.current = true;
+    setIsLoadingMore(true);
+    setLoadMoreError(null);
+
+    try {
+      const page = await libraryController.getPlaylistTrackPage(playlist, nextPageKey);
+      if (playlistIdRef.current !== loadingPlaylistId) return;
+      setTracks((current) => appendUniqueTracks(current, page.tracks));
+      setHasMoreTracks(page.hasMore);
+      setNextPageKey(page.nextPageKey);
+    } catch {
+      if (playlistIdRef.current === loadingPlaylistId) {
+        setLoadMoreError("Could not load more songs.");
+      }
+    } finally {
+      if (playlistIdRef.current === loadingPlaylistId) {
+        isLoadingMoreRef.current = false;
+        setIsLoadingMore(false);
+      }
+    }
+  }, [hasMoreTracks, isLoading, libraryController, nextPageKey, playlist]);
+
   useEffect(() => {
-    if (playlist?.kind !== "liked-songs" && playlist?.id !== "LM") return;
-    if (!libraryState.library) return;
-    setTracks(libraryState.library.likedSongs);
-    setIsLoading(false);
-  }, [libraryState.library?.likedSongs, playlist?.id, playlist?.kind]);
+    if (!hasMoreTracks) return;
+    const sentinel = loadMoreRef.current;
+    if (!sentinel) return;
+    const scrollRoot = sentinel.closest("[data-page-scroll-root]");
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        void loadMoreTracks();
+      }
+    }, {
+      root: scrollRoot instanceof Element ? scrollRoot : null,
+      rootMargin: "700px 0px",
+    });
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMoreTracks, loadMoreTracks, tracks.length]);
 
   const sortedTracks = useMemo(() => {
     if (sort === "dateAdded") {
@@ -187,10 +248,10 @@ export function PlaylistView({ playlist, playerController, libraryController }: 
       </header>
       {isLoading && <p className={styles.message}>Loading songs...</p>}
       {error && <p className={styles.message}>{error}</p>}
-      {!isLoading && !error && tracks.length === 0 && (
+      {!isLoading && !error && !hasMoreTracks && tracks.length === 0 && (
         <p className={styles.message}>This playlist is empty.</p>
       )}
-      {!isLoading && !error && tracks.length > 0 && (
+      {!isLoading && !error && (tracks.length > 0 || hasMoreTracks) && (
         <>
           <div
             className={styles.sortOptions}
@@ -252,6 +313,15 @@ export function PlaylistView({ playlist, playerController, libraryController }: 
                 <IconPlayerPlay size={18} />
               </button>
             ))}
+          </div>
+          <div ref={loadMoreRef} className={styles.loadMoreStatus} aria-live="polite">
+            {isLoadingMore
+              ? "Loading more songs..."
+              : loadMoreError
+                ? loadMoreError
+                : hasMoreTracks
+                  ? ""
+                  : ""}
           </div>
         </>
       )}

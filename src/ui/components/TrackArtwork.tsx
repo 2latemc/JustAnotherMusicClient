@@ -1,14 +1,27 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { IconDisc, IconMusic, IconPlaylist, IconUser } from "@tabler/icons-react";
 import { getArtworkUrlCandidates } from "../../datasource/youtube/artwork";
 import { tauriFetch } from "../../datasource/youtube/tauriFetch";
 import styles from "./TrackArtwork.module.css";
+
+const ARTWORK_RETRY_DELAYS_MS = [500, 1500];
+
+function getRetriedArtworkUrl(url: string, retryCount: number): string {
+  if (retryCount === 0 || url.startsWith("blob:")) return url;
+
+  const hashIndex = url.indexOf("#");
+  const urlWithoutHash = hashIndex >= 0 ? url.slice(0, hashIndex) : url;
+  const hash = hashIndex >= 0 ? url.slice(hashIndex) : "";
+  const separator = urlWithoutHash.includes("?") ? "&" : "?";
+  return `${urlWithoutHash}${separator}artworkRetry=${retryCount}${hash}`;
+}
 
 interface TrackArtworkProps {
   artworkUrl?: string;
   className?: string;
   iconSize?: number;
   loading?: "eager" | "lazy";
+  retryOnError?: boolean;
   variant?: "track" | "album" | "artist" | "playlist";
 }
 
@@ -17,6 +30,7 @@ export function TrackArtwork({
   className,
   iconSize = 24,
   loading = "lazy",
+  retryOnError = false,
   variant = "track",
 }: TrackArtworkProps) {
   const artworkCandidates = useMemo(
@@ -24,9 +38,14 @@ export function TrackArtwork({
     [artworkUrl],
   );
   const [artworkIndex, setArtworkIndex] = useState(0);
+  const [retryCount, setRetryCount] = useState(0);
   const [proxiedArtworkUrl, setProxiedArtworkUrl] = useState<string | null>(null);
   const [loadedArtworkUrl, setLoadedArtworkUrl] = useState<string | null>(null);
-  const currentArtworkUrl = artworkCandidates[artworkIndex] ?? proxiedArtworkUrl;
+  const retryTimerRef = useRef<number | null>(null);
+  const baseArtworkUrl = artworkCandidates[artworkIndex] ?? proxiedArtworkUrl;
+  const currentArtworkUrl = baseArtworkUrl
+    ? getRetriedArtworkUrl(baseArtworkUrl, retryCount)
+    : undefined;
   const isArtworkLoaded = loadedArtworkUrl === currentArtworkUrl;
   const FallbackIcon =
     variant === "artist"
@@ -39,9 +58,21 @@ export function TrackArtwork({
 
   useEffect(() => {
     setArtworkIndex(0);
+    setRetryCount(0);
     setProxiedArtworkUrl(null);
     setLoadedArtworkUrl(null);
   }, [artworkUrl]);
+
+  useEffect(() => () => {
+    if (retryTimerRef.current !== null) {
+      window.clearTimeout(retryTimerRef.current);
+    }
+  }, []);
+
+  useEffect(() => {
+    setRetryCount(0);
+    setLoadedArtworkUrl(null);
+  }, [baseArtworkUrl]);
 
   useEffect(() => {
     if (!artworkUrl || artworkIndex < artworkCandidates.length || proxiedArtworkUrl) return;
@@ -89,6 +120,19 @@ export function TrackArtwork({
           onLoad={() => setLoadedArtworkUrl(currentArtworkUrl)}
           onError={() => {
             setLoadedArtworkUrl(null);
+            if (retryOnError && retryCount < ARTWORK_RETRY_DELAYS_MS.length) {
+              if (retryTimerRef.current !== null) {
+                window.clearTimeout(retryTimerRef.current);
+              }
+              retryTimerRef.current = window.setTimeout(() => {
+                retryTimerRef.current = null;
+                setRetryCount((count) =>
+                  count === retryCount ? count + 1 : count,
+                );
+              }, ARTWORK_RETRY_DELAYS_MS[retryCount]);
+              return;
+            }
+            setRetryCount(0);
             setArtworkIndex((index) => index + 1);
           }}
         />

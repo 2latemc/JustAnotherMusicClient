@@ -101,7 +101,10 @@ export function Layout({
            
           <div className={styles.contentContainer}>
 
-            <div className={`${styles.pageContent} ${fullBleedContent ? styles.fullBleedContent : ""}`}>
+            <div
+              className={`${styles.pageContent} ${fullBleedContent ? styles.fullBleedContent : ""}`}
+              data-page-scroll-root
+            >
               {children}
               
             </div>

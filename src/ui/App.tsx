@@ -18,7 +18,6 @@ import { PlayerBar } from "./components/player/PlayerBar";
 import { QueuePanel } from "./components/player/QueuePanel";
 import { Layout } from "./components/Layout";
 import type { Tab, TabViewState } from "./types/tab";
-import { hasPrimaryModifierOnly } from "./platform";
 import {
   libraryController,
   playerController,
@@ -28,7 +27,7 @@ import {
   usePlayerState,
 } from "../player/playerStore";
 import styles from "./App.module.css";
-import { loadAppSession, saveAppSession } from "../player/appSession";
+import { clearAppSession, loadAppSession, saveAppSession } from "../player/appSession";
 import { useMediaSession } from "../player/useMediaSession";
 import { playerUIStore, usePlayerUIState } from "./stores/playerUIStore";
 import { AppLoadingScreen } from "./components/AppLoadingScreen";
@@ -39,10 +38,12 @@ import {
   type UpdateInfo,
 } from "../internal/updateChecker";
 import {
+  clearAppSettings,
   getAppSetting,
   removeAppSetting,
   setAppSetting,
 } from "../internal/appSettings";
+import { clearCache } from "../internal/cache";
 import {
   Onboarding,
   OnboardingCompleteToast,
@@ -61,6 +62,12 @@ import {
   saveMiniPlayerPosition,
   useMiniPlayerEnabled,
 } from "./settings/miniPlayer";
+import { setAutostartEnabled } from "./settings/autostart";
+import {
+  eventMatchesShortcut,
+  useKeyboardShortcuts,
+  type KeyboardShortcutAction,
+} from "./settings/keyboardShortcuts";
 const restoredSession = loadAppSession();
 const LOADING_SCREEN_FADE_MS = 80;
 const LOADING_SCREEN_MAX_MS = 4000;
@@ -72,6 +79,17 @@ const MOUSE_BACK_BUTTON = 3;
 const MOUSE_FORWARD_BUTTON = 4;
 const MINI_PLAYER_BOTTOM_MARGIN = 24;
 const MAIN_WINDOW_DRAG_BACKGROUND_SUPPRESS_MS = 10000;
+const TAB_SHORTCUT_ACTIONS: KeyboardShortcutAction[] = [
+  "tab1",
+  "tab2",
+  "tab3",
+  "tab4",
+  "tab5",
+  "tab6",
+  "tab7",
+  "tab8",
+  "tab9",
+];
 
 function getNavigationState(tab: Tab): TabViewState | null {
   if (tab.view === "settings") return null;
@@ -187,6 +205,7 @@ export default function App() {
   const playerState = usePlayerState();
   const playerUIState = usePlayerUIState();
   const miniPlayerEnabled = useMiniPlayerEnabled();
+  const keyboardShortcuts = useKeyboardShortcuts();
 
   const [tabs, setTabs] = useState<Tab[]>(
     () => restoredSession?.tabs.map(stripNavigationHistory) ?? [{ id: "1", view: "home" }],
@@ -226,6 +245,7 @@ export default function App() {
   const mainWindowDragSuppressUntilRef = useRef(0);
   const lastErrorAlertRef = useRef<string | null>(null);
   const sessionStateRef = useRef({ tabs, activeTabId, nextTabId });
+  const sessionPersistenceDisabledRef = useRef(false);
   sessionStateRef.current = { tabs, activeTabId, nextTabId };
 
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
@@ -493,6 +513,7 @@ export default function App() {
 
   useEffect(() => {
     const persist = () => {
+      if (sessionPersistenceDisabledRef.current) return;
       const current = sessionStateRef.current;
       saveAppSession({
         version: 1,
@@ -513,6 +534,45 @@ export default function App() {
       window.removeEventListener("beforeunload", persist);
       persist();
     };
+  }, []);
+
+  const handleDeleteAllAppData = useCallback(async () => {
+    sessionPersistenceDisabledRef.current = true;
+    playerUIStore.setLyricsOpen(false);
+    setIsSearchOpen(false);
+    setShowQueueMounted(false);
+    setAvailableUpdate(null);
+    setOnboardingComplete(null);
+    setOnboardingStep(null);
+    setShowOnboardingComplete(false);
+    setShowOnboardingWelcome(false);
+
+    tabManager.reset("1");
+    setTabs([{ id: "1", view: "home" }]);
+    setActiveTabId("1");
+    setNextTabId(2);
+    setSidebarWidth(240);
+    setQueuePanelWidth(340);
+    clearAppSession();
+
+    const results = await Promise.allSettled([
+      setAutostartEnabled(false),
+      libraryController.signOut(),
+      clearCache(),
+      clearAppSettings(),
+    ]);
+
+    try {
+      localStorage.clear();
+    } catch {
+      clearLocalOnboardingComplete();
+      clearAppSession();
+    }
+
+    const failed = results.find((result) => result.status === "rejected");
+    if (failed) {
+      throw failed.reason;
+    }
   }, []);
 
   useEffect(() => {
@@ -638,11 +698,6 @@ export default function App() {
     setNextTabId((currentId) => currentId + 1);
   };
 
-  const createTabFromShortcut = () => {
-    createTab();
-    setIsSearchOpen(true);
-  };
-
   const handleSearch = (query: string, openInNewTab: boolean) => {
     playerUIStore.setLyricsOpen(false);
     let targetTabId = activeTabId;
@@ -729,11 +784,6 @@ export default function App() {
     if (!closedTab) return;
 
     const newTabs = tabs.filter((tab) => tab.id !== tabId);
-    const remainingMusicTabs = newTabs.filter((tab) => tab.view !== "settings");
-
-    if (closedTab.view !== "settings" && remainingMusicTabs.length === 0) {
-      return;
-    }
 
     const closedIndex = tabs.findIndex((tab) => tab.id === tabId);
     const replacementMusicTab =
@@ -1034,45 +1084,47 @@ export default function App() {
 
     const handleShortcut = (event: KeyboardEvent) => {
       if (event.repeat) return;
-      const primaryModifierOnly = hasPrimaryModifierOnly(event);
+      if (event.defaultPrevented) return;
+      const textEntry = isTextEntry(event.target);
 
-      if (primaryModifierOnly && event.code === "Space" && activeTab?.view !== "settings") {
+      if (!textEntry) {
+        const tabShortcutIndex = TAB_SHORTCUT_ACTIONS.findIndex((action) =>
+          eventMatchesShortcut(event, keyboardShortcuts[action])
+        );
+        const tab = tabs[tabShortcutIndex];
+        if (tabShortcutIndex >= 0 && tab) {
+          event.preventDefault();
+          handleSwitchTab(tab.id);
+        }
+        if (tabShortcutIndex >= 0) return;
+      }
+
+      if (textEntry) return;
+
+      if (
+        eventMatchesShortcut(event, keyboardShortcuts.search)
+        && activeTab?.view !== "settings"
+      ) {
         event.preventDefault();
         if (isSearchOpen) dismissSearch();
         else setIsSearchOpen(true);
         return;
       }
 
-      if (primaryModifierOnly && event.code === "KeyT") {
+      if (eventMatchesShortcut(event, keyboardShortcuts.newTab)) {
         event.preventDefault();
-        createTabFromShortcut();
+        createTab();
         return;
       }
 
-      if (primaryModifierOnly && event.code === "KeyW") {
+      if (eventMatchesShortcut(event, keyboardShortcuts.closeTab)) {
         event.preventDefault();
         handleCloseTab(activeTabId);
         return;
       }
 
-      if (primaryModifierOnly && /^Digit[1-9]$/.test(event.code)) {
-        const tabIndex = Number(event.code.slice(-1)) - 1;
-        const tab = tabs[tabIndex];
-        if (tab) {
-          event.preventDefault();
-          handleSwitchTab(tab.id);
-        }
-        return;
-      }
-
       if (
-        event.code === "Space"
-        && !event.ctrlKey
-        && !event.altKey
-        && !event.metaKey
-        && !event.shiftKey
-        && !event.defaultPrevented
-        && !isTextEntry(event.target)
+        eventMatchesShortcut(event, keyboardShortcuts.playPause)
         && playerState.currentTrack
         && playerState.status !== "loading"
       ) {
@@ -1081,6 +1133,36 @@ export default function App() {
           event.target.blur();
         }
         void playerController.togglePlayPause();
+        return;
+      }
+
+      if (
+        eventMatchesShortcut(event, keyboardShortcuts.mute)
+        && playerState.currentTrack
+        && playerState.status !== "loading"
+      ) {
+        event.preventDefault();
+        void playerController.toggleMute();
+        return;
+      }
+
+      if (
+        eventMatchesShortcut(event, keyboardShortcuts.previousTrack)
+        && playerState.currentTrack
+        && playerState.status !== "loading"
+      ) {
+        event.preventDefault();
+        void playerController.skipToPrevious();
+        return;
+      }
+
+      if (
+        eventMatchesShortcut(event, keyboardShortcuts.nextTrack)
+        && playerState.currentTrack
+        && playerState.status !== "loading"
+      ) {
+        event.preventDefault();
+        void playerController.skipToNext();
       }
     };
 
@@ -1090,6 +1172,7 @@ export default function App() {
     activeTab?.view,
     activeTabId,
     isSearchOpen,
+    keyboardShortcuts,
     nextTabId,
     onboardingStep,
     playerState.currentTrack,
@@ -1230,24 +1313,19 @@ useEffect(() => {
   syncPlayerState();
   const unsubscribe = tabManager.subscribe(syncPlayerState);
 
-  // sync time separately via rAF — don't put this in tabManager.subscribe
-  let running = true;
-  let rafId: number;
-
   const syncTime = () => {
-    if (!running) return;
     void emit("player-time-sync", {
       currentTime: playerController.getCurrentTime(),
       duration: playerController.getDuration(),
     });
-    rafId = requestAnimationFrame(syncTime);
   };
-  rafId = requestAnimationFrame(syncTime);
+
+  syncTime();
+  const timeSyncIntervalId = window.setInterval(syncTime, 1000);
 
   return () => {
     unsubscribe();
-    running = false;
-    cancelAnimationFrame(rafId);
+    window.clearInterval(timeSyncIntervalId);
   };
 }, []);
 
@@ -1373,6 +1451,7 @@ useEffect(() => {
                 libraryState={libraryState}
                 onRestartOnboarding={restartOnboarding}
                 onSignIn={handleSignIn}
+                onDeleteAllAppData={handleDeleteAllAppData}
               />
             )}
           </div>

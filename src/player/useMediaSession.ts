@@ -1,14 +1,31 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { PlayerState } from "./PlayerController";
 import type { PlayerControllerActions } from "./playerStore";
 import { logInternalWarn } from "../internal/logging";
 
-type WindowsMediaAction = "play" | "pause" | "next" | "previous";
+type NativeMediaAction =
+  | "play"
+  | "pause"
+  | "next"
+  | "previous"
+  | { action: "seekTo"; positionSec: number };
 
 const usesNativeWindowsMediaSession =
   isTauri() && /Windows/i.test(navigator.userAgent);
+const usesNativeMediaSession =
+  usesNativeWindowsMediaSession;
+
+function getNativeMediaCommand(): string | null {
+  if (usesNativeWindowsMediaSession) return "update_windows_media_session";
+  return null;
+}
+
+function getNativeMediaControlEvent(): string | null {
+  if (usesNativeWindowsMediaSession) return "windows-media-control";
+  return null;
+}
 
 function getBrowserPlaybackState(status: PlayerState["status"]): MediaSessionPlaybackState {
   if (status === "playing" || status === "loading") return "playing";
@@ -16,16 +33,30 @@ function getBrowserPlaybackState(status: PlayerState["status"]): MediaSessionPla
   return "none";
 }
 
+function getClampedPosition(duration: number, position: number): number {
+  const safePosition = Number.isFinite(position) ? Math.max(0, position) : 0;
+  if (!Number.isFinite(duration) || duration <= 0) return safePosition;
+  return Math.min(duration, safePosition);
+}
+
 export function useMediaSession(
   state: PlayerState,
   controller: PlayerControllerActions,
 ): void {
-  useEffect(() => {
-    if (!usesNativeWindowsMediaSession) return;
+  const nativeMediaCommand = useMemo(getNativeMediaCommand, []);
+  const nativeMediaControlEvent = useMemo(getNativeMediaControlEvent, []);
 
-    const unlistenPromise = listen<WindowsMediaAction>(
-      "windows-media-control",
+  useEffect(() => {
+    if (!nativeMediaControlEvent) return;
+
+    const unlistenPromise = listen<NativeMediaAction>(
+      nativeMediaControlEvent,
       ({ payload }) => {
+        if (typeof payload === "object") {
+          if (payload.action === "seekTo") void controller.seekTo(payload.positionSec);
+          return;
+        }
+
         if (payload === "play") void controller.play();
         if (payload === "pause") void controller.pause();
         if (payload === "next") void controller.skipToNext();
@@ -36,28 +67,57 @@ export function useMediaSession(
     return () => {
       void unlistenPromise.then((unlisten) => unlisten());
     };
-  }, [controller]);
+  }, [controller, nativeMediaControlEvent]);
 
   useEffect(() => {
-    if (!usesNativeWindowsMediaSession) return;
+    if (!nativeMediaCommand) return;
 
     const track = state.currentTrack;
-    void invoke("update_windows_media_session", {
+    const duration = controller.getDuration() || track?.durationSec || 0;
+    void invoke(nativeMediaCommand, {
       update: {
         title: track?.title ?? null,
         artist: track?.artist ?? null,
         artworkUrl: track?.artworkUrl ?? null,
         status: state.status,
+        durationSec: duration || null,
+        positionSec: getClampedPosition(duration, controller.getCurrentTime()),
       },
     }).catch((error) => {
       logInternalWarn("useMediaSession native update failed", {
         error: String(error),
       });
     });
-  }, [state.currentTrack, state.status]);
+  }, [controller, nativeMediaCommand, state.currentTrack, state.status]);
 
   useEffect(() => {
-    if (usesNativeWindowsMediaSession || !("mediaSession" in navigator)) return;
+    if (!nativeMediaCommand || !state.currentTrack) return;
+
+    const updateNativePosition = () => {
+      const duration = controller.getDuration() || state.currentTrack?.durationSec || 0;
+      void invoke(nativeMediaCommand, {
+        update: {
+          title: state.currentTrack?.title ?? null,
+          artist: state.currentTrack?.artist ?? null,
+          artworkUrl: state.currentTrack?.artworkUrl ?? null,
+          status: state.status,
+          durationSec: duration || null,
+          positionSec: getClampedPosition(duration, controller.getCurrentTime()),
+        },
+      }).catch((error) => {
+        logInternalWarn("useMediaSession native position update failed", {
+          error: String(error),
+        });
+      });
+    };
+
+    updateNativePosition();
+    const intervalId = window.setInterval(updateNativePosition, 1000);
+    return () => window.clearInterval(intervalId);
+  }, [controller, nativeMediaCommand, state.currentTrack, state.status]);
+
+  useEffect(() => {
+    if (usesNativeMediaSession || !("mediaSession" in navigator)) return;
 
     const handlers: Partial<Record<MediaSessionAction, MediaSessionActionHandler>> = {
       play: () => void controller.play(),
@@ -102,7 +162,7 @@ export function useMediaSession(
   }, [controller]);
 
   useEffect(() => {
-    if (usesNativeWindowsMediaSession || !("mediaSession" in navigator)) return;
+    if (usesNativeMediaSession || !("mediaSession" in navigator)) return;
 
     const track = state.currentTrack;
     try {
@@ -121,7 +181,7 @@ export function useMediaSession(
 
   useEffect(() => {
     if (
-      usesNativeWindowsMediaSession
+      usesNativeMediaSession
       || !("mediaSession" in navigator)
       || !state.currentTrack
     ) return;

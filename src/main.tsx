@@ -10,6 +10,7 @@ import {
 } from "./ui/settings/windowControls";
 import { hydrateMiniPlayerSettings } from "./ui/settings/miniPlayer";
 import { hydratePlayerControlSettings } from "./ui/settings/playerControls";
+import { hydrateKeyboardShortcuts } from "./ui/settings/keyboardShortcuts";
 import { applyPlatformAttributes } from "./ui/platform";
 import { DiscordRpcService } from "./player/DiscordRPC";
 
@@ -22,6 +23,7 @@ void Promise.all([
   hydrateWindowControlSettings(),
   hydrateMiniPlayerSettings(),
   hydratePlayerControlSettings(),
+  hydrateKeyboardShortcuts(),
 ]).catch((error) => {
   logInternalError("settings hydration failed", error);
 });

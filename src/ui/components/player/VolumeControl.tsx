@@ -50,12 +50,10 @@ export function VolumeControl() {
   };
 
   useEffect(() => {
-    const nextVolume = playerController.getVolume();
-    const nextMuted = playerController.isMuted();
-    setVolume(nextVolume);
-    setIsMuted(nextMuted);
-    setVolumeDisplay(nextMuted ? 0 : nextVolume);
-  }, [playerState]);
+    setVolume(playerState.volume);
+    setIsMuted(playerState.muted);
+    setVolumeDisplay(playerState.muted ? 0 : playerState.volume);
+  }, [playerState.muted, playerState.volume]);
 
   useEffect(() => () => {
     cancelVolumeAnimation();

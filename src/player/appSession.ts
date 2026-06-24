@@ -37,3 +37,11 @@ export function saveAppSession(session: AppSession): void {
     // Persistence failure should not interrupt playback.
   }
 }
+
+export function clearAppSession(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Persistence failure should not interrupt a full reset.
+  }
+}

@@ -3,6 +3,7 @@ import {
   IconDisc,
   IconHeart,
   IconPlaylist,
+  IconRefresh,
 } from "@tabler/icons-react";
 import type { Album, Playlist } from "../../datasource/types";
 import { libraryController, useLibraryState } from "../../player/playerStore";
@@ -106,6 +107,7 @@ function SidebarPlaylistArtwork({ playlist }: { playlist: Playlist }) {
       className={styles.albumPreview}
       artworkUrl={playlist.artworkUrl}
       iconSize={24}
+      retryOnError
       variant="playlist"
     />
   );
@@ -155,6 +157,14 @@ export function Sidebar({
 
   const isCollapsed = width <= COLLAPSED_WIDTH;
   const shouldHideText = width <= TEXT_HIDE_THRESHOLD;
+  const hasUserCreatedPlaylists = (libraryState.library?.playlists.length ?? 0) > 0;
+  const hasLoadedLibrary = Boolean(libraryState.library);
+  const showPlaylistRetry =
+    libraryView === "playlists" &&
+    libraryState.status !== "signed-out" &&
+    (hasLoadedLibrary || libraryState.status === "error") &&
+    !hasUserCreatedPlaylists;
+  const isRetryingPlaylists = libraryState.status === "loading";
 
   useEffect(() => {
     if (localStorage.getItem(PLAYLIST_LIKED_ORDER_MIGRATION_KEY) !== "true") {
@@ -524,6 +534,11 @@ export function Sidebar({
     callback();
   };
 
+  const handlePlaylistRetry = () => {
+    if (isRetryingPlaylists) return;
+    void libraryController.refresh();
+  };
+
   const isDragActive = Boolean(draggedItem);
 
   const listClasses = `${styles.albumList} ${isDragActive ? styles.dragActive : ""}`;
@@ -623,26 +638,49 @@ export function Sidebar({
             ))
           ) : (
             playlists.length ? (
-              playlists.map((playlist) => (
-                <button
-                  type="button"
-                  key={playlist.id}
-                  data-sidebar-item-id={playlist.id}
-                  data-sidebar-item-type="playlists"
-                  className={`${styles.albumItem} ${shouldHideText ? styles.centered : ""} ${draggedItem?.id === playlist.id && draggedItem.type === "playlists" ? styles.dragging : ""} ${dropTarget?.id === playlist.id && dropTarget?.type === "playlists" && !dropTarget.insertAfter ? styles.dropBefore : ""} ${dropTarget?.id === playlist.id && dropTarget?.type === "playlists" && dropTarget.insertAfter ? styles.dropAfter : ""}`}
-                  onPointerDown={(event) => handleSidebarItemPointerDown(event, playlist.id, "playlists")}
-                  onClick={() => handleSidebarItemClick(() => onNavigatePlaylist(playlist))}
-                  title={shouldHideText ? `${playlist.title} by ${playlist.owner}` : undefined}
-                >
-                  <SidebarPlaylistArtwork playlist={playlist} />
-                  {!shouldHideText && (
-                    <div className={styles.albumText}>
-                      <span className={styles.albumTitle}>{playlist.title}</span>
-                      <span className={styles.albumArtist}>{playlist.owner}</span>
-                    </div>
-                  )}
-                </button>
-              ))
+              <>
+                {playlists.map((playlist) => (
+                  <button
+                    type="button"
+                    key={playlist.id}
+                    data-sidebar-item-id={playlist.id}
+                    data-sidebar-item-type="playlists"
+                    className={`${styles.albumItem} ${shouldHideText ? styles.centered : ""} ${draggedItem?.id === playlist.id && draggedItem.type === "playlists" ? styles.dragging : ""} ${dropTarget?.id === playlist.id && dropTarget?.type === "playlists" && !dropTarget.insertAfter ? styles.dropBefore : ""} ${dropTarget?.id === playlist.id && dropTarget?.type === "playlists" && dropTarget.insertAfter ? styles.dropAfter : ""}`}
+                    onPointerDown={(event) => handleSidebarItemPointerDown(event, playlist.id, "playlists")}
+                    onClick={() => handleSidebarItemClick(() => onNavigatePlaylist(playlist))}
+                    title={shouldHideText ? `${playlist.title} by ${playlist.owner}` : undefined}
+                  >
+                    <SidebarPlaylistArtwork playlist={playlist} />
+                    {!shouldHideText && (
+                      <div className={styles.albumText}>
+                        <span className={styles.albumTitle}>{playlist.title}</span>
+                        <span className={styles.albumArtist}>{playlist.owner}</span>
+                      </div>
+                    )}
+                  </button>
+                ))}
+                {showPlaylistRetry && (
+                  <div className={styles.emptyLibraryView}>
+                    <IconPlaylist size={28} aria-hidden="true" />
+                    {!shouldHideText && (
+                      <span>No user-created playlists were found.</span>
+                    )}
+                    <button
+                      type="button"
+                      className={styles.libraryRetryButton}
+                      onClick={handlePlaylistRetry}
+                      disabled={isRetryingPlaylists}
+                      title="Retry playlist sync"
+                      aria-label="Retry playlist sync"
+                    >
+                      <IconRefresh size={15} aria-hidden="true" />
+                      {!shouldHideText && (
+                        <span>{isRetryingPlaylists ? "Retrying..." : "Retry"}</span>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </>
             ) : (
               <div className={styles.emptyLibraryView}>
                 <IconPlaylist size={28} aria-hidden="true" />
@@ -661,6 +699,21 @@ export function Sidebar({
                     title="Sign in to YouTube Music"
                   >
                     Sign in
+                  </button>
+                )}
+                {showPlaylistRetry && (
+                  <button
+                    type="button"
+                    className={styles.libraryRetryButton}
+                    onClick={handlePlaylistRetry}
+                    disabled={isRetryingPlaylists}
+                    title="Retry playlist sync"
+                    aria-label="Retry playlist sync"
+                  >
+                    <IconRefresh size={15} aria-hidden="true" />
+                    {!shouldHideText && (
+                      <span>{isRetryingPlaylists ? "Retrying..." : "Retry"}</span>
+                    )}
                   </button>
                 )}
               </div>

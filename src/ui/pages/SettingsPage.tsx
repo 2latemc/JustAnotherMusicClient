@@ -1,4 +1,4 @@
-import { type CSSProperties, useEffect, useState } from "react";
+import { type CSSProperties, type KeyboardEvent, useEffect, useState } from "react";
 import {
   IconBug,
   IconCoffee,
@@ -22,7 +22,6 @@ import {
   type UpdateInfo,
   type UpdateInstallProgress,
 } from "../../internal/updateChecker";
-import { clearAppSettings, removeAppSetting } from "../../internal/appSettings";
 import {
   clearCache,
   DEFAULT_CACHE_SIZE_GB,
@@ -51,28 +50,29 @@ import {
   setMiniPlayerEnabled,
   useMiniPlayerEnabled,
 } from "../settings/miniPlayer";
+import {
+  captureKeyboardShortcut,
+  formatKeyboardShortcut,
+  KEYBOARD_SHORTCUT_ACTIONS,
+  resetKeyboardShortcut,
+  resetKeyboardShortcuts,
+  setKeyboardShortcut,
+  useKeyboardShortcuts,
+  type KeyboardShortcutAction,
+} from "../settings/keyboardShortcuts";
 import styles from "./SettingsPage.module.css";
 
 const GITHUB_REPOSITORY_URL = "https://github.com/2latemc/JustAnotherMusicClient";
 const GITHUB_NEW_ISSUE_URL = `${GITHUB_REPOSITORY_URL}/issues/new/choose`;
 const KOFI_URL = "https://ko-fi.com/totally2late";
 
-type SettingsTab = "about" | "system" | "window";
+type SettingsTab = "about" | "system" | "shortcuts" | "window";
 
 const SETTINGS_TABS: Array<{ id: SettingsTab; label: string }> = [
   { id: "about", label: "About" },
   { id: "system", label: "System" },
   { id: "window", label: "Style" },
-];
-
-const APP_SETTING_KEYS = [
-  "onboardingComplete",
-  "mini-player-enabled",
-  "mini-player-position",
-  "paper-pc-mode",
-  "extra-player-controls-always-visible",
-  "windows-style-window-controls",
-  "native-window-controls",
+  { id: "shortcuts", label: "Shortcuts" },
 ];
 
 interface SettingsPageProps {
@@ -80,6 +80,7 @@ interface SettingsPageProps {
   libraryState: LibraryState;
   onRestartOnboarding: () => void;
   onSignIn: () => Promise<void>;
+  onDeleteAllAppData: () => Promise<void>;
 }
 
 export function SettingsPage({
@@ -87,6 +88,7 @@ export function SettingsPage({
   libraryState,
   onRestartOnboarding,
   onSignIn,
+  onDeleteAllAppData,
 }: SettingsPageProps) {
   const [cacheStats, setCacheStats] = useState<CacheStats | null>(null);
   const [cacheSizeGb, setCacheSizeGb] = useState(DEFAULT_CACHE_SIZE_GB.toString());
@@ -109,6 +111,8 @@ export function SettingsPage({
   const [resetSettingsBusy, setResetSettingsBusy] = useState(false);
   const [resetSettingsError, setResetSettingsError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<SettingsTab>("about");
+  const [listeningShortcut, setListeningShortcut] = useState<KeyboardShortcutAction | null>(null);
+  const keyboardShortcuts = useKeyboardShortcuts();
   const paperPcMode = usePaperPcMode();
   const miniPlayerEnabled = useMiniPlayerEnabled();
   const extraPlayerControlsAlwaysVisible = useExtraPlayerControlsAlwaysVisible();
@@ -274,30 +278,60 @@ export function SettingsPage({
 
     setResetSettingsBusy(true);
     try {
-      await setAutostartEnabled(false).catch(() => undefined);
-      await clearAppSettings().catch(async () => {
-        await Promise.all(APP_SETTING_KEYS.map((key) => removeAppSetting(key)));
-      });
-      try {
-        localStorage.clear();
-      } catch {
-        APP_SETTING_KEYS.forEach((key) => {
-          try {
-            localStorage.removeItem(key);
-          } catch {
-            // Reload still applies any durable settings that were cleared.
-          }
-        });
-      }
+      await onDeleteAllAppData();
       await relaunch().catch(() => {
         window.location.reload();
       });
     } catch {
-      setResetSettingsError("Unable to delete settings.");
+      setResetSettingsError("Unable to delete all app data.");
       setResetSettingsBusy(false);
       setResetSettingsConfirming(false);
     }
   };
+
+  const handleShortcutCapture = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    action: KeyboardShortcutAction,
+  ) => {
+    if (listeningShortcut !== action) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (event.code === "Escape") {
+      setListeningShortcut(null);
+      return;
+    }
+
+    const shortcut = captureKeyboardShortcut(event.nativeEvent);
+    if (!shortcut) return;
+
+    setKeyboardShortcut(action, shortcut);
+    setListeningShortcut(null);
+  };
+
+  useEffect(() => {
+    if (!listeningShortcut) return undefined;
+
+    const handleShortcutKeyDown = (event: globalThis.KeyboardEvent) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+
+      if (event.code === "Escape") {
+        setListeningShortcut(null);
+        return;
+      }
+
+      const shortcut = captureKeyboardShortcut(event);
+      if (!shortcut) return;
+
+      setKeyboardShortcut(listeningShortcut, shortcut);
+      setListeningShortcut(null);
+    };
+
+    window.addEventListener("keydown", handleShortcutKeyDown, true);
+    return () => window.removeEventListener("keydown", handleShortcutKeyDown, true);
+  }, [listeningShortcut]);
 
   const formatBytes = (bytes: number) => {
     if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -607,8 +641,8 @@ export function SettingsPage({
 
               <div className={styles.actionRow}>
                 <span className={styles.toggleDescription}>
-                  <strong>Delete all settings</strong>
-                  <span>Reset app preferences, layout, onboarding, and local settings.</span>
+                  <strong>Delete all app data</strong>
+                  <span>Reset settings, cache, account, queue, tabs, onboarding, and local data.</span>
                 </span>
                 <button
                   className={styles.dangerButton}
@@ -621,11 +655,81 @@ export function SettingsPage({
                     ? "Deleting..."
                     : resetSettingsConfirming
                       ? "Press again to confirm"
-                      : "Delete settings"}
+                      : "Delete everything"}
                 </button>
               </div>
 
               {resetSettingsError && <p className={styles.error}>{resetSettingsError}</p>}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {activeTab === "shortcuts" && (
+        <div className={styles.tabPanel} role="tabpanel" aria-label="Keyboard shortcut settings">
+          <section className={styles.card} aria-labelledby="keyboard-shortcuts-settings-title">
+            <div className={styles.compactHeader}>
+              <h2 id="keyboard-shortcuts-settings-title">Keyboard shortcuts</h2>
+            </div>
+
+            <div className={styles.settingsList}>
+              <div className={styles.actionRow}>
+                <span className={styles.toggleDescription}>
+                  <strong>Reset shortcuts</strong>
+                  <span>Restore every keyboard shortcut to its default.</span>
+                </span>
+                <button
+                  className={styles.secondaryButton}
+                  type="button"
+                  onClick={resetKeyboardShortcuts}
+                >
+                  <IconRefresh size={18} />
+                  Reset all
+                </button>
+              </div>
+
+              {KEYBOARD_SHORTCUT_ACTIONS.map((shortcutAction) => {
+                const shortcut = keyboardShortcuts[shortcutAction.id];
+                const isListening = listeningShortcut === shortcutAction.id;
+
+                return (
+                  <div className={styles.shortcutRow} key={shortcutAction.id}>
+                    <span className={styles.toggleDescription}>
+                      <strong>{shortcutAction.label}</strong>
+                      <span>{shortcutAction.description}</span>
+                    </span>
+                    <div className={styles.shortcutControls}>
+                      <button
+                        className={`${styles.shortcutCapture} ${isListening ? styles.shortcutCaptureListening : ""}`}
+                        type="button"
+                        aria-pressed={isListening}
+                        onClick={() => setListeningShortcut(shortcutAction.id)}
+                        onKeyDown={(event) => handleShortcutCapture(event, shortcutAction.id)}
+                        onBlur={() => {
+                          if (isListening) setListeningShortcut(null);
+                        }}
+                      >
+                        {isListening ? "Press shortcut..." : formatKeyboardShortcut(shortcut)}
+                      </button>
+                      <button
+                        className={styles.secondaryButton}
+                        type="button"
+                        onClick={() => resetKeyboardShortcut(shortcutAction.id)}
+                      >
+                        Reset
+                      </button>
+                      <button
+                        className={styles.secondaryButton}
+                        type="button"
+                        disabled={!shortcut}
+                        onClick={() => setKeyboardShortcut(shortcutAction.id, null)}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </section>
         </div>

@@ -13,6 +13,7 @@ import type {
   Lyrics,
   Playlist,
   SearchResults,
+  TrackPage,
   Track,
 } from "../types";
 import { collectArtworkCandidates, getVideoArtworkFallback, selectArtworkUrl } from "./artwork";
@@ -93,6 +94,20 @@ type ParsedMusicResponse = {
 type MusicContinuation = {
   key: string;
   load(): Promise<unknown>;
+};
+
+type YouTubeMusicPlaylistPage = {
+  items?: MusicItem[];
+  contents?: MusicItem[];
+  has_continuation?: boolean;
+  getContinuation(): Promise<YouTubeMusicPlaylistPage>;
+};
+
+type PlaylistPageSession = {
+  playlistId: string;
+  playlistPage: YouTubeMusicPlaylistPage;
+  seenTrackIds: Set<string>;
+  expiresAt: number;
 };
 
 type UpNextItem = {
@@ -194,6 +209,8 @@ const LIKED_SONGS_PLAYLIST_ID = "LM";
 const LIBRARY_CACHE_KEY = "youtube-music:library:v5";
 const ARTIST_CACHE_VERSION = "v3";
 const ARTIST_SUBSCRIPTION_OVERRIDE_MS = 60_000;
+const PLAYLIST_PAGE_SESSION_TTL_MS = 10 * 60_000;
+const PLAYLIST_TRACK_CACHE_VERSION = "v4";
 
 class YouTubeMusicAuthError extends Error {
   constructor(message: string) {
@@ -213,6 +230,7 @@ export class YouTubeMusicDataSource extends DataSource {
   private libraryRefreshPromise: Promise<LibrarySnapshot> | null = null;
   private readonly albumRefreshPromises = new Map<string, Promise<Track[]>>();
   private readonly playlistRefreshPromises = new Map<string, Promise<Track[]>>();
+  private readonly playlistPageSessions = new Map<string, PlaylistPageSession>();
   private readonly trackRefreshPromises = new Map<string, Promise<Track>>();
   private readonly searchRefreshPromises = new Map<string, Promise<Track[]>>();
   private readonly mixedSearchRefreshPromises = new Map<string, Promise<SearchResults>>();
@@ -1263,6 +1281,23 @@ export class YouTubeMusicDataSource extends DataSource {
   }
 
   private getMusicContinuation(client: Innertube, root: unknown): MusicContinuation | null {
+    const parsed = root as ParsedMusicResponse;
+    const contentShelf = parsed.contents_memo?.getType(YTNodes.MusicPlaylistShelf)?.[0] as
+      | { continuation?: unknown }
+      | undefined;
+    const continuationShelf = parsed.continuation_contents_memo?.getType(YTNodes.MusicPlaylistShelf)?.[0] as
+      | { continuation?: unknown }
+      | undefined;
+    const shelfContinuation = contentShelf?.continuation ?? continuationShelf?.continuation;
+    if (typeof shelfContinuation === "string" && shelfContinuation.length > 0) {
+      return {
+        key: shelfContinuation,
+        load: () => this.executeMusicBrowse(client, {
+          continuation: shelfContinuation,
+        }),
+      };
+    }
+
     const seen = new WeakSet<object>();
     const found: {
       endpoint: {
@@ -1436,6 +1471,46 @@ export class YouTubeMusicDataSource extends DataSource {
       trackCount: tracks.length,
     });
     return tracks;
+  }
+
+  private createPlaylistPageKey(playlistId: string): string {
+    return `${playlistId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+  }
+
+  private pruneExpiredPlaylistPageSessions() {
+    const now = Date.now();
+    for (const [key, session] of this.playlistPageSessions) {
+      if (session.expiresAt <= now) {
+        this.playlistPageSessions.delete(key);
+      }
+    }
+  }
+
+  private collectParsedPlaylistPageTracks(page: YouTubeMusicPlaylistPage, seenTrackIds: Set<string>): Track[] {
+    const items = page.items ?? page.contents ?? [];
+    const tracks: Track[] = [];
+
+    for (const item of items) {
+      const track = this.toTrack(item);
+      if (!track || seenTrackIds.has(track.id)) continue;
+      seenTrackIds.add(track.id);
+      tracks.push(track);
+    }
+
+    return tracks;
+  }
+
+  private getPlaylistTrackCacheKey(playlistId: string): string {
+    return `youtube-music:playlist-tracks:${PLAYLIST_TRACK_CACHE_VERSION}:${playlistId}`;
+  }
+
+  private async cachePlaylistTracks(playlistId: string, tracks: Track[]): Promise<Track[]> {
+    if (tracks.length === 0) return tracks;
+    const cacheKey = this.getPlaylistTrackCacheKey(playlistId);
+    const cached = await getCachedJson<Track[]>(cacheKey);
+    const merged = this.uniqueById([...(cached ?? []), ...tracks]);
+    await setCachedJson(cacheKey, merged);
+    return merged;
   }
 
   private getAlbumHeaderArtwork(response: unknown): string | undefined {
@@ -1989,10 +2064,7 @@ export class YouTubeMusicDataSource extends DataSource {
     ]);
     const recentlyPlayed = this.uniqueById(recentItems.map((item) => this.toTrack(item)).filter((item): item is Track => Boolean(item)));
     const historyMessages = this.getResponseMessages(historyResponse);
-    await setCachedJson(
-      `youtube-music:playlist-tracks:v4:${LIKED_SONGS_PLAYLIST_ID}`,
-      likedSongsResult.tracks,
-    );
+    await this.cachePlaylistTracks(LIKED_SONGS_PLAYLIST_ID, likedSongsResult.tracks);
 
     if (libraryMessages.length > 0 && albums.length === 0) {
       throw new YouTubeMusicAuthError(
@@ -2537,7 +2609,7 @@ export class YouTubeMusicDataSource extends DataSource {
   }
 
   async getPlaylistTracks(playlist: Playlist, onUpdate?: (tracks: Track[]) => void): Promise<Track[]> {
-    const cacheKey = `youtube-music:playlist-tracks:v4:${playlist.id}`;
+    const cacheKey = this.getPlaylistTrackCacheKey(playlist.id);
     const cached = await getCachedJson<Track[]>(cacheKey);
 
     if (cached?.length) {
@@ -2563,6 +2635,111 @@ export class YouTubeMusicDataSource extends DataSource {
     }
 
     return (await this.refreshPlaylistTracks(playlist, cacheKey)).value;
+  }
+
+  async getPlaylistTrackPage(
+    playlist: Playlist,
+    pageKey?: string,
+    onUpdate?: (page: TrackPage) => void,
+  ): Promise<TrackPage> {
+    this.pruneExpiredPlaylistPageSessions();
+
+    const cachedTracks = pageKey
+      ? null
+      : await getCachedJson<Track[]>(this.getPlaylistTrackCacheKey(playlist.id));
+    if (cachedTracks?.length) {
+      onUpdate?.({ tracks: cachedTracks, hasMore: false });
+    }
+    const client = await this.getMusicClient();
+    let page: YouTubeMusicPlaylistPage;
+    let sessionKey = pageKey;
+    let seenTrackIds = new Set<string>();
+    let tracks: Track[] = [];
+
+    if (pageKey) {
+      const session = this.playlistPageSessions.get(pageKey);
+      if (!session || session.playlistId !== playlist.id) {
+        logInternalWarn("YouTubeMusicDataSource.getPlaylistTrackPage missing session", {
+          playlistId: playlist.id,
+          pageKey,
+        });
+        return { tracks: [], hasMore: false };
+      }
+
+      if (!session.playlistPage.has_continuation) {
+        this.playlistPageSessions.delete(pageKey);
+        return { tracks: [], hasMore: false };
+      }
+
+      seenTrackIds = session.seenTrackIds;
+      page = session.playlistPage;
+
+      for (let attempts = 0; attempts < 100 && page.has_continuation && tracks.length === 0; attempts += 1) {
+        try {
+          page = await page.getContinuation();
+        } catch (error) {
+          this.playlistPageSessions.delete(pageKey);
+          logInternalWarn("YouTubeMusicDataSource.getPlaylistTrackPage continuation failed", {
+            playlistId: playlist.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return { tracks: [], hasMore: false };
+        }
+        tracks = this.collectParsedPlaylistPageTracks(page, seenTrackIds);
+      }
+    } else {
+      page = await client.music.getPlaylist(playlist.id) as YouTubeMusicPlaylistPage;
+      if (cachedTracks?.length) {
+        seenTrackIds = new Set(cachedTracks.map((track) => track.id));
+        const freshTracks = this.collectParsedPlaylistPageTracks(page, seenTrackIds);
+        tracks = freshTracks.length > 0
+          ? await this.cachePlaylistTracks(playlist.id, freshTracks)
+          : cachedTracks;
+        seenTrackIds = new Set(tracks.map((track) => track.id));
+      } else {
+        tracks = this.collectParsedPlaylistPageTracks(page, seenTrackIds);
+      }
+
+      if (!cachedTracks?.length && tracks.length === 0 && !page.has_continuation) {
+        logInternalWarn("YouTubeMusicDataSource.getPlaylistTrackPage verifying empty first page", {
+          playlistId: playlist.id,
+        });
+        const fallbackTracks = await this.collectPlaylistTracks(client, playlist.id);
+        if (fallbackTracks.length > 0) {
+          const cachedFallbackTracks = await this.cachePlaylistTracks(playlist.id, fallbackTracks);
+          return { tracks: cachedFallbackTracks, hasMore: false };
+        }
+      }
+    }
+
+    if (tracks.length > 0) {
+      await this.cachePlaylistTracks(playlist.id, tracks);
+    }
+
+    if (!page.has_continuation) {
+      if (sessionKey) this.playlistPageSessions.delete(sessionKey);
+      logInternalInfo("YouTubeMusicDataSource.getPlaylistTrackPage complete", {
+        playlistId: playlist.id,
+        trackCount: tracks.length,
+        hasMore: false,
+      });
+      return { tracks, hasMore: false };
+    }
+
+    sessionKey ??= this.createPlaylistPageKey(playlist.id);
+    this.playlistPageSessions.set(sessionKey, {
+      playlistId: playlist.id,
+      playlistPage: page,
+      seenTrackIds,
+      expiresAt: Date.now() + PLAYLIST_PAGE_SESSION_TTL_MS,
+    });
+
+    logInternalInfo("YouTubeMusicDataSource.getPlaylistTrackPage loaded", {
+      playlistId: playlist.id,
+      trackCount: tracks.length,
+      hasMore: true,
+    });
+    return { tracks, hasMore: true, nextPageKey: sessionKey };
   }
 
   private async refreshPlaylistTracks(
@@ -2613,7 +2790,7 @@ export class YouTubeMusicDataSource extends DataSource {
 
     try {
       const client = await this.getMusicClient();
-      const cacheKey = `youtube-music:playlist-tracks:v4:${playlist.id}`;
+      const cacheKey = this.getPlaylistTrackCacheKey(playlist.id);
       const cachedTracks = await getCachedJson<Track[]>(cacheKey);
       const existingTracks = cachedTracks
         ?? await this.collectPlaylistTracks(client, playlist.id);
@@ -2785,7 +2962,7 @@ export class YouTubeMusicDataSource extends DataSource {
 
     try {
       const client = await this.getMusicClient();
-      const cacheKey = `youtube-music:playlist-tracks:v4:${playlist.id}`;
+      const cacheKey = this.getPlaylistTrackCacheKey(playlist.id);
       const editablePlaylistId = playlist.id.startsWith("VL")
         ? playlist.id.slice(2)
         : playlist.id;
@@ -2852,9 +3029,15 @@ export class YouTubeMusicDataSource extends DataSource {
           ...cachedLibrary,
           likedSongs,
         });
+      }
+      const likedSongsCacheKey = this.getPlaylistTrackCacheKey(LIKED_SONGS_PLAYLIST_ID);
+      const cachedLikedSongs = await getCachedJson<Track[]>(likedSongsCacheKey);
+      if (liked) {
+        await this.cachePlaylistTracks(LIKED_SONGS_PLAYLIST_ID, [track]);
+      } else if (cachedLikedSongs) {
         await setCachedJson(
-          `youtube-music:playlist-tracks:v4:${LIKED_SONGS_PLAYLIST_ID}`,
-          likedSongs,
+          likedSongsCacheKey,
+          cachedLikedSongs.filter((item) => item.id !== track.id),
         );
       }
 

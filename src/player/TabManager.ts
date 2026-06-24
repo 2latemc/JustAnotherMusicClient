@@ -23,6 +23,8 @@ const EMPTY_PLAYER_STATE: PlayerState = {
   history: [],
   error: null,
   playbackOrderMode: "in-order",
+  volume: 1,
+  muted: false,
 };
 
 export class TabManager {
@@ -80,6 +82,21 @@ export class TabManager {
       : null;
     if (playbackOwner) void playbackOwner.player.resumeFromTabSwitch();
     this.emit();
+  }
+
+  reset(initialId: MusicTabId): void {
+    for (const tab of this.tabs.values()) {
+      tab.player.dispose();
+    }
+    for (const unsubscribe of this.playerUnsubscribes.values()) {
+      unsubscribe();
+    }
+    this.tabs.clear();
+    this.playerUnsubscribes.clear();
+    this.activeId = null;
+    this.playbackOwnerId = null;
+    this.activeSessionSnapshot = undefined;
+    this.createTab(initialId);
   }
 
   getActiveState(): PlayerState {
@@ -158,14 +175,15 @@ export class TabManager {
   removeTab(id: MusicTabId): void {
     const tab = this.tabs.get(id);
     if (!tab) return;
-    if (this.activeId === id) {
-      throw new Error("Activate another music tab before removing the active tab.");
-    }
 
     tab.player.dispose();
     this.tabs.delete(id);
     this.playerUnsubscribes.get(id)?.();
     this.playerUnsubscribes.delete(id);
+
+    if (this.activeId === id) {
+      this.activeId = this.tabs.keys().next().value ?? null;
+    }
     if (this.playbackOwnerId === id) {
       this.playbackOwnerId = this.activeId;
       const activePlayer = this.active?.player;

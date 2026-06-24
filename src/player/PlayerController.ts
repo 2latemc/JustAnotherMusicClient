@@ -15,6 +15,8 @@ export interface PlayerState {
   history: Track[];
   error: string | null;
   playbackOrderMode: PlaybackOrderMode;
+  volume: number;
+  muted: boolean;
 }
 
 export interface PlayerSession {
@@ -62,6 +64,8 @@ export class PlayerController {
     history: [],
     error: null,
     playbackOrderMode: "in-order",
+    volume: 1,
+    muted: false,
   };
 
   constructor(private readonly dataSource: DataSource) {
@@ -122,6 +126,8 @@ export class PlayerController {
       history: session.history,
       error: null,
       playbackOrderMode: this.playbackOrderMode,
+      volume: this.audioEngine.getVolume(),
+      muted: this.audioEngine.isMuted(),
     };
     this.emit();
     if (session.currentTrack) {
@@ -731,6 +737,7 @@ export class PlayerController {
   async setVolume(level: number): Promise<void> {
     logInternalInfo("PlayerController.setVolume", { level });
     this.audioEngine.setVolume(level);
+    this.setState({ volume: this.audioEngine.getVolume() });
   }
 
   async skipToPrevious(): Promise<void> {
@@ -822,7 +829,7 @@ export class PlayerController {
     const nextMuted = !this.audioEngine.isMuted();
     logInternalInfo("PlayerController.toggleMute", { muted: nextMuted });
     this.audioEngine.setMuted(nextMuted);
-    this.emit();
+    this.setState({ muted: this.audioEngine.isMuted() });
   }
 
   async getLyrics(track: Track): Promise<Lyrics | null> {

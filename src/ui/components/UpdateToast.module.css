@@ -7,8 +7,8 @@
   max-width: min(720px, calc(100vw - 40px));
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 8px 9px 8px 18px;
+  gap: 16px;
+  padding: 9px 10px 9px 18px;
   border: 1px solid rgb(255 255 255 / 12%);
   border-radius: var(--radius-lg);
   background: rgb(17 17 17 / 94%);
@@ -23,6 +23,7 @@
 .message {
   display: grid;
   gap: 3px;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -42,6 +43,13 @@
   color: #ff7892;
 }
 
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
 .installButton,
 .changesButton {
   min-height: 36px;
@@ -59,7 +67,7 @@
     transform var(--transition-fast);
 }
 
-.installButton {
+.primaryButton {
   border: 1px solid #ff315a;
   background: var(--color-accent);
   color: #fff;
@@ -68,7 +76,7 @@
     0 0 28px rgb(255 0 51 / 24%);
 }
 
-.installButton:hover:not(:disabled) {
+.primaryButton:hover:not(:disabled) {
   background: #ff1746;
   box-shadow:
     0 0 16px rgb(255 0 51 / 76%),
@@ -76,8 +84,8 @@
   transform: translateY(-1px);
 }
 
-.installButton:active:not(:disabled),
-.changesButton:active {
+.primaryButton:active:not(:disabled),
+.secondaryButton:active {
   transform: translateY(0);
 }
 
@@ -87,31 +95,32 @@
 }
 
 .changesButton {
-  border: 1px solid #ff315a;
-  background: var(--color-accent);
-  color: #fff;
-  box-shadow:
-    0 0 12px rgb(255 0 51 / 58%),
-    0 0 28px rgb(255 0 51 / 24%);
   text-decoration: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
 
-.changesButton:hover {
-  background: #ff1746;
-  box-shadow:
-    0 0 16px rgb(255 0 51 / 76%),
-    0 0 34px rgb(255 0 51 / 34%);
+.secondaryButton {
+  border: 1px solid rgb(255 255 255 / 13%);
+  background: rgb(255 255 255 / 7%);
+  color: var(--color-text-primary);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 5%);
+}
+
+.secondaryButton:hover {
+  border-color: rgb(255 255 255 / 22%);
+  background: rgb(255 255 255 / 11%);
+  color: #fff;
   transform: translateY(-1px);
 }
 
 .closeButton {
-  width: 28px;
-  height: 28px;
+  width: 0;
+  height: 24px;
   display: grid;
   place-items: center;
+  margin-left: -8px;
   padding: 0;
   border: 0;
   outline: 0;
@@ -120,17 +129,26 @@
   color: var(--color-text-secondary);
   cursor: pointer;
   opacity: 0;
+  pointer-events: none;
   transition:
     color var(--transition-fast),
-    opacity var(--transition-fast);
+    background var(--transition-fast),
+    margin-left var(--transition-fast),
+    opacity var(--transition-fast),
+    width var(--transition-fast);
+  overflow: hidden;
 }
 
 .toast:hover .closeButton,
-.closeButton:focus-visible {
+.toast:focus-within .closeButton {
+  width: 24px;
+  margin-left: 0;
   opacity: 1;
+  pointer-events: auto;
 }
 
 .closeButton:hover {
+  background: rgb(255 255 255 / 8%);
   color: #fff;
 }
 

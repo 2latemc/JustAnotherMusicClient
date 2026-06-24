@@ -38,6 +38,8 @@ use rand::{rngs::OsRng, RngCore};
 
 #[cfg(target_os = "windows")]
 mod windows_media;
+#[cfg(target_os = "macos")]
+mod macos_media;
 
 mod discord_rpc;
 
@@ -1884,6 +1886,8 @@ pub fn run() {
 
     #[cfg(target_os = "windows")]
     let builder = builder.manage(windows_media::WindowsMediaSession::new());
+    #[cfg(target_os = "macos")]
+    let builder = builder.manage(macos_media::MacosMediaSession::new());
 
     builder
         .setup(|app| {
@@ -1957,6 +1961,8 @@ pub fn run() {
             cache_clear,
             discord_rpc_update,
             discord_rpc_clear,
+            #[cfg(target_os = "macos")]
+            macos_media::update_macos_media_session,
             #[cfg(target_os = "windows")]
             windows_media::update_windows_media_session
         ])

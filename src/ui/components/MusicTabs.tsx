@@ -122,6 +122,8 @@ export function MusicTabs({
     };
   }, [onReorderTab]);
 
+  const canCloseTabs = tabs.length > 1;
+
   return (
     <div className={styles.tabsContainer}>
       <div
@@ -191,17 +193,19 @@ export function MusicTabs({
                   {title}
                 </span>
               </div>
-              <button
-                className={styles.closeButton}
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onCloseTab(tab.id);
-                }}
-                aria-label={`Close ${title}`}
-              >
-                <IconX size={18} />
-              </button>
+              {canCloseTabs && (
+                <button
+                  className={styles.closeButton}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCloseTab(tab.id);
+                  }}
+                  aria-label={`Close ${title}`}
+                >
+                  <IconX size={18} />
+                </button>
+              )}
             </div>
           );
         })}

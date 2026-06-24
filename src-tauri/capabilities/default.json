@@ -57,6 +57,7 @@
       "fetch_audio_bytes",
       "fetch_youtube_music_audio",
       "proxy_http_request",
+      "update_macos_media_session",
       "update_windows_media_session",
       "save_youtube_credentials",
       "load_youtube_credentials",

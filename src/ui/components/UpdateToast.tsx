@@ -16,6 +16,10 @@ export function UpdateToast({ update, onDismiss }: UpdateToastProps) {
   const [installing, setInstalling] = useState(false);
   const [progress, setProgress] = useState<UpdateInstallProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const releaseLabel = update.canInstall ? "GitHub" : "Download";
+  const releaseButtonClassName = `${styles.changesButton} ${
+    update.canInstall ? styles.secondaryButton : styles.primaryButton
+  }`;
 
   useEffect(() => {
     if (installing) return;
@@ -38,7 +42,7 @@ export function UpdateToast({ update, onDismiss }: UpdateToastProps) {
     try {
       await installUpdate(update, setProgress);
     } catch {
-      setError("Installation failed. You can still download it from GitHub.");
+      setError("Installation failed. You can still open the release on GitHub.");
       setInstalling(false);
     }
   };
@@ -56,38 +60,41 @@ export function UpdateToast({ update, onDismiss }: UpdateToastProps) {
         )}
         {error && <span className={styles.error}>{error}</span>}
       </div>
-      {update.canInstall && (
+      <div className={styles.actions}>
+        {update.canInstall && (
+          <button
+            className={`${styles.installButton} ${styles.primaryButton}`}
+            type="button"
+            disabled={installing}
+            onClick={() => void install()}
+          >
+            {installing ? "Installing..." : "Install"}
+          </button>
+        )}
+        <a
+          className={releaseButtonClassName}
+          href={update.releaseUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={`Open version ${update.version} release on GitHub`}
+          onClick={(e) => {
+            e.preventDefault();
+            void openUrl(update.releaseUrl);
+          }}
+        >
+          {releaseLabel}
+        </a>
         <button
-          className={styles.installButton}
+          className={styles.closeButton}
           type="button"
           disabled={installing}
-          onClick={() => void install()}
+          onClick={dismiss}
+          aria-label="Close update notification"
+          title="Close"
         >
-          {installing ? "Installing..." : "Install"}
+          <IconX size={16} />
         </button>
-      )}
-      <a
-        className={styles.changesButton}
-        href={update.releaseUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        onClick={(e) => {
-          e.preventDefault();
-          void openUrl(update.releaseUrl);
-        }}
-      >
-        Download
-      </a>
-      <button
-        className={styles.closeButton}
-        type="button"
-        disabled={installing}
-        onClick={dismiss}
-        aria-label="Close update notification"
-        title="Close"
-      >
-        <IconX size={17} />
-      </button>
+      </div>
     </div>
   );
 }

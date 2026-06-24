@@ -11,6 +11,44 @@ export interface DiscordPresenceData {
   isPlaying: boolean;
 }
 
+const DISCORD_TEXT_LIMIT = 128;
+const TRUSTED_ARTWORK_HOSTS = new Set([
+  "i.ytimg.com",
+  "lh3.googleusercontent.com",
+  "yt3.ggpht.com",
+]);
+
+function sanitizeDiscordText(value: string): string {
+  const text = value.replace(/\s+/g, " ").trim();
+  if (text.length <= DISCORD_TEXT_LIMIT) return text;
+  return `${text.slice(0, DISCORD_TEXT_LIMIT - 3)}...`;
+}
+
+function sanitizeArtworkUrl(value?: string): string | undefined {
+  if (!value) return undefined;
+
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "https:") return undefined;
+    if (!TRUSTED_ARTWORK_HOSTS.has(parsed.hostname)) return undefined;
+    return parsed.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function sanitizePresenceData(data: DiscordPresenceData): DiscordPresenceData {
+  return {
+    title: sanitizeDiscordText(data.title),
+    artist: sanitizeDiscordText(data.artist),
+    album: sanitizeDiscordText(data.album),
+    artworkUrl: sanitizeArtworkUrl(data.artworkUrl),
+    duration: Math.max(0, Math.floor(Number.isFinite(data.duration) ? data.duration : 0)),
+    currentTime: Math.max(0, Math.floor(Number.isFinite(data.currentTime) ? data.currentTime : 0)),
+    isPlaying: data.isPlaying,
+  };
+}
+
 /**
  * Manages Discord Rich Presence integration
  * Calls Tauri commands that handle the actual Discord connection in Rust
@@ -36,24 +74,25 @@ export class DiscordRpcService {
     }
 
     try {
+      const safeData = sanitizePresenceData(data);
       logInternalDebug("Discord.updatePresence", {
-        title: data.title,
-        artist: data.artist,
-        isPlaying: data.isPlaying,
+        title: safeData.title,
+        artist: safeData.artist,
+        isPlaying: safeData.isPlaying,
       });
 
       // Call Tauri command to update presence in Rust backend
       await invoke("discord_rpc_update", {
-        title: data.title,
-        artist: data.artist,
-        album: data.album,
-        artworkUrl: data.artworkUrl,
-        duration: Math.floor(data.duration),
-        currentTime: Math.floor(data.currentTime),
-        isPlaying: data.isPlaying,
+        title: safeData.title,
+        artist: safeData.artist,
+        album: safeData.album,
+        artworkUrl: safeData.artworkUrl,
+        duration: safeData.duration,
+        currentTime: safeData.currentTime,
+        isPlaying: safeData.isPlaying,
       });
 
-       logInternalDebug("Discord.updatePresence.success", {});
+      logInternalDebug("Discord.updatePresence.success", {});
     } catch (error) {
       logInternalWarn("Discord.updatePresence.failed", error as Record<string, unknown>);
     }

@@ -136,6 +136,51 @@
   background: rgb(255 255 255 / 16%);
 }
 
+.libraryRetryButton {
+  min-height: 36px;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 15px;
+  border: 1px solid #ff315a;
+  border-radius: var(--radius-md);
+  background: var(--color-accent);
+  color: #fff;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow:
+    0 0 12px rgb(255 0 51 / 58%),
+    0 0 28px rgb(255 0 51 / 24%);
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    color var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.libraryRetryButton:hover:not(:disabled) {
+  background: #ff1746;
+  box-shadow:
+    0 0 16px rgb(255 0 51 / 76%),
+    0 0 34px rgb(255 0 51 / 34%);
+  transform: translateY(-1px);
+}
+
+.libraryRetryButton:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.libraryRetryButton:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
 .albumItem {
   width: 100%;
   min-width: 0;

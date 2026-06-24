@@ -74,6 +74,12 @@ export interface SearchResults {
   playlists: Playlist[];
 }
 
+export interface TrackPage {
+  tracks: Track[];
+  nextPageKey?: string;
+  hasMore: boolean;
+}
+
 export interface AuthPrompt {
   verificationUrl: string;
   userCode: string;

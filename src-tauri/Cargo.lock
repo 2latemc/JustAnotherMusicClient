@@ -2117,12 +2117,15 @@ dependencies = [
 
 [[package]]
 name = "just-another-music-client"
-version = "1.2.7"
+version = "1.2.71"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
+ "block2",
  "discord-rich-presence",
  "keyring",
+ "objc2",
+ "objc2-foundation",
  "portpicker",
  "rand 0.8.6",
  "reqwest 0.12.28",
