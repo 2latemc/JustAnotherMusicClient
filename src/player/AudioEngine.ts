@@ -58,9 +58,8 @@ let playbackClaimId = 0;
 let playbackOwner: AudioEngine | null = null;
 
 function shouldUseNativeAudio(): boolean {
-  // Native audio playback is disabled on macOS/Linux because the backend
-  // download path (getStreamData) can fail with 403 errors. The iframe-based
-  // YouTube player is more reliable across all platforms.
+  // The maintained playback path is the YouTube iframe player. Native audio is
+  // kept as an explicit fallback for player errors that are specific to a webview.
   return false;
 }
 
@@ -141,6 +140,7 @@ export class AudioEngine {
     }
 
     const requestId = ++this.loadRequestId;
+    this.releaseNativeAudio();
     const player = await this.ensurePlayer();
     if (requestId !== this.loadRequestId) return;
     if (this.currentVideoId === videoId) return;
@@ -155,9 +155,25 @@ export class AudioEngine {
       videoId,
     );
     player.cueVideoById(videoId);
-    await cued;
+    try {
+      await cued;
+    } catch (error) {
+      if (requestId === this.loadRequestId && this.currentVideoId === videoId) {
+        this.currentVideoId = null;
+      }
+      throw error;
+    }
     if (requestId !== this.loadRequestId || this.currentVideoId !== videoId) return;
     logInternalInfo("AudioEngine.loadTrack cued", { videoId });
+  }
+
+  async loadNativeFallback(
+    videoId: string,
+    audioData: ArrayBuffer,
+    mimeType?: string,
+  ): Promise<void> {
+    this.player?.stopVideo();
+    await this.loadNativeAudio(videoId, audioData, mimeType);
   }
 
   setOnEnded(listener: (() => void) | null): void {
@@ -166,7 +182,7 @@ export class AudioEngine {
 
   async play(): Promise<boolean> {
     const claimId = this.claimPlayback();
-    if (this.useNativeAudio) {
+    if (this.useNativeAudio || this.audio) {
       if (!this.audio || !this.currentVideoId) {
         throw new Error("No audio track is loaded.");
       }
@@ -401,6 +417,7 @@ export class AudioEngine {
   }
 
   private pauseForPlaybackClaim(): void {
+    this.audio?.pause();
     this.player?.pauseVideo();
   }
 

@@ -36,6 +36,11 @@ export interface PlayerSession {
 
 type Listener = () => void;
 
+function isYouTubePlayerError5(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /\bYouTube player error 5\b/.test(message);
+}
+
 function normalizePlaybackOrderMode(mode: unknown): PlaybackOrderMode {
   if (mode === "shuffle") return "shuffle";
   if (mode === "repeat-one" || mode === "repeat-all") return "repeat-one";
@@ -608,7 +613,24 @@ export class PlayerController {
       if (this.audioEngine.usesNativeAudio() && !audioData) {
         throw new Error("The data source does not support native audio playback.");
       }
-      await this.audioEngine.loadTrack(track.id, audioData?.bytes, audioData?.mimeType);
+      try {
+        await this.audioEngine.loadTrack(track.id, audioData?.bytes, audioData?.mimeType);
+      } catch (error) {
+        if (!isYouTubePlayerError5(error) || !this.dataSource.getStreamData) {
+          throw error;
+        }
+
+        logInternalWarn("PlayerController.ensureTrackLoaded falling back to native audio", {
+          trackId: track.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        const fallbackAudioData = await this.dataSource.getStreamData(track);
+        await this.audioEngine.loadNativeFallback(
+          track.id,
+          fallbackAudioData.bytes,
+          fallbackAudioData.mimeType,
+        );
+      }
 
       this.loadedTrackId = track.id;
       if (this.pendingSeekTime !== null) {
