@@ -10,6 +10,8 @@ export type KeyboardShortcutAction =
   | "closeTab"
   | "newTab"
   | "search"
+  | "navigateBack"
+  | "navigateForward"
   | "tab1"
   | "tab2"
   | "tab3"
@@ -77,6 +79,16 @@ export const KEYBOARD_SHORTCUT_ACTIONS: Array<{
     description: "Open or close search.",
   },
   {
+    id: "navigateBack",
+    label: "Go back",
+    description: "Go back in the active tab.",
+  },
+  {
+    id: "navigateForward",
+    label: "Go forward",
+    description: "Go forward in the active tab.",
+  },
+  {
     id: "tab1",
     label: "Go to tab 1",
     description: "Switch to the first tab.",
@@ -131,6 +143,8 @@ export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcutMap = {
   closeTab: { code: "KeyW", key: "w", primary: true },
   newTab: { code: "KeyT", key: "t", primary: true },
   search: { code: "Space", key: " ", primary: true },
+  navigateBack: { code: "ArrowLeft", key: "ArrowLeft", alt: true },
+  navigateForward: { code: "ArrowRight", key: "ArrowRight", alt: true },
   tab1: { code: "Digit1", key: "1", primary: true },
   tab2: { code: "Digit2", key: "2", primary: true },
   tab3: { code: "Digit3", key: "3", primary: true },

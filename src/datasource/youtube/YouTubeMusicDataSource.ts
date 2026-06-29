@@ -848,6 +848,26 @@ export class YouTubeMusicDataSource extends DataSource {
     return results;
   }
 
+  private normalizePlaylistId(playlistId: string): string {
+    return playlistId.replace(/^VL/, "");
+  }
+
+  private getPlaylistBrowseIds(playlistId: string): string[] {
+    const normalizedId = this.normalizePlaylistId(playlistId);
+    return [...new Set([playlistId, normalizedId, `VL${normalizedId}`])];
+  }
+
+  private findEditablePlaylistId(root: unknown): string | undefined {
+    const response = root as ParsedMusicResponse;
+    const editableHeader = response.contents_memo
+      ?.getType(YTNodes.MusicEditablePlaylistDetailHeader)?.[0] as {
+        playlist_id?: string;
+      } | undefined;
+    if (editableHeader?.playlist_id) return editableHeader.playlist_id;
+
+    return this.findStringByKey(root, new Set(["playlist_id", "playlistId"]));
+  }
+
   private uniqueById<T extends { id: string }>(items: T[]): T[] {
     const byId = new Map<string, T>();
     for (const item of items) {
@@ -1598,24 +1618,28 @@ export class YouTubeMusicDataSource extends DataSource {
         const playlist = queue.shift();
         if (!playlist) return;
 
-        try {
-          const response = await this.executeMusicBrowse(client, { browseId: playlist.id });
-          const parsed = response as ParsedMusicResponse;
-          const editableHeader = parsed.contents_memo
-            ?.getType(YTNodes.MusicEditablePlaylistDetailHeader)?.[0] as {
-              playlist_id?: string;
-            } | undefined;
-          if (!editableHeader) continue;
+        for (const browseId of this.getPlaylistBrowseIds(playlist.id)) {
+          try {
+            const response = await this.executeMusicBrowse(client, { browseId });
+            const editablePlaylistId = this.findEditablePlaylistId(response);
+            if (!editablePlaylistId) continue;
 
-          createdPlaylistIds.add(playlist.id);
-          if (!playlist.artworkUrl) {
-            playlist.artworkUrl = this.getAlbumHeaderArtwork(response);
+            const normalizedEditableId = this.normalizePlaylistId(editablePlaylistId);
+            const normalizedPlaylistId = this.normalizePlaylistId(playlist.id);
+            if (normalizedEditableId !== normalizedPlaylistId) continue;
+
+            createdPlaylistIds.add(playlist.id);
+            if (!playlist.artworkUrl) {
+              playlist.artworkUrl = this.getAlbumHeaderArtwork(response);
+            }
+            break;
+          } catch (error) {
+            logInternalWarn("YouTubeMusicDataSource.getCreatedPlaylists playlist failed", {
+              playlistId: playlist.id,
+              browseId,
+              error: error instanceof Error ? error.message : String(error),
+            });
           }
-        } catch (error) {
-          logInternalWarn("YouTubeMusicDataSource.getCreatedPlaylists playlist failed", {
-            playlistId: playlist.id,
-            error: error instanceof Error ? error.message : String(error),
-          });
         }
       }
     });
@@ -3710,6 +3734,26 @@ export class YouTubeMusicDataSource extends DataSource {
   }
 
   async getStreamData(track: Track): Promise<StreamData> {
+    if (track.source === "local") {
+      if (!track.localPath) {
+        throw new Error("Local track path is missing.");
+      }
+      const payload = await invoke<NativeAudioPayload>("local_audio_read", {
+        path: track.localPath,
+      });
+      const audioBytes = decodeBase64(payload.bodyBase64);
+      if (audioBytes.byteLength === 0) {
+        throw new Error("Local audio file returned no data.");
+      }
+      return {
+        bytes: audioBytes.buffer.slice(
+          audioBytes.byteOffset,
+          audioBytes.byteOffset + audioBytes.byteLength,
+        ) as ArrayBuffer,
+        mimeType: payload.mimeType,
+      };
+    }
+
     logInternalInfo("YouTubeMusicDataSource.getStreamData download start", {
       trackId: track.id,
     });

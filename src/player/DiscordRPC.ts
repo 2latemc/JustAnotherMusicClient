@@ -6,16 +6,25 @@ export interface DiscordPresenceData {
   artist: string;
   album: string;
   artworkUrl?: string;
+  songUrl?: string;
+  artistUrl?: string;
+  albumUrl?: string;
   duration: number; // in seconds
   currentTime: number; // in seconds
   isPlaying: boolean;
 }
 
 const DISCORD_TEXT_LIMIT = 128;
+const DISCORD_ASSET_URL_LIMIT = 256;
 const TRUSTED_ARTWORK_HOSTS = new Set([
   "i.ytimg.com",
   "lh3.googleusercontent.com",
   "yt3.ggpht.com",
+]);
+const TRUSTED_PRESENCE_LINK_HOSTS = new Set([
+  "music.youtube.com",
+  "youtube.com",
+  "www.youtube.com",
 ]);
 
 function sanitizeDiscordText(value: string): string {
@@ -31,6 +40,21 @@ function sanitizeArtworkUrl(value?: string): string | undefined {
     const parsed = new URL(value);
     if (parsed.protocol !== "https:") return undefined;
     if (!TRUSTED_ARTWORK_HOSTS.has(parsed.hostname)) return undefined;
+    const url = parsed.toString();
+    if (url.length > DISCORD_ASSET_URL_LIMIT) return undefined;
+    return url;
+  } catch {
+    return undefined;
+  }
+}
+
+function sanitizePresenceLink(value?: string): string | undefined {
+  if (!value) return undefined;
+
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "https:") return undefined;
+    if (!TRUSTED_PRESENCE_LINK_HOSTS.has(parsed.hostname)) return undefined;
     return parsed.toString();
   } catch {
     return undefined;
@@ -43,6 +67,9 @@ function sanitizePresenceData(data: DiscordPresenceData): DiscordPresenceData {
     artist: sanitizeDiscordText(data.artist),
     album: sanitizeDiscordText(data.album),
     artworkUrl: sanitizeArtworkUrl(data.artworkUrl),
+    songUrl: sanitizePresenceLink(data.songUrl),
+    artistUrl: sanitizePresenceLink(data.artistUrl),
+    albumUrl: sanitizePresenceLink(data.albumUrl),
     duration: Math.max(0, Math.floor(Number.isFinite(data.duration) ? data.duration : 0)),
     currentTime: Math.max(0, Math.floor(Number.isFinite(data.currentTime) ? data.currentTime : 0)),
     isPlaying: data.isPlaying,
@@ -87,6 +114,9 @@ export class DiscordRpcService {
         artist: safeData.artist,
         album: safeData.album,
         artworkUrl: safeData.artworkUrl,
+        songUrl: safeData.songUrl,
+        artistUrl: safeData.artistUrl,
+        albumUrl: safeData.albumUrl,
         duration: safeData.duration,
         currentTime: safeData.currentTime,
         isPlaying: safeData.isPlaying,

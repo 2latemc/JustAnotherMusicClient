@@ -110,9 +110,18 @@
   overflow: hidden;
 }
 
+.pageScrollShell {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  display: flex;
+}
+
 .pageContent {
   flex: 1;
   min-height: 0;
+  min-width: 0;
   overflow-y: auto;
   padding: 0 56px 56px 56px;
  
@@ -146,6 +155,52 @@
 
 .pageContent::-webkit-scrollbar {
   display: none;
+}
+
+.transientScrollbarHitArea {
+  position: absolute;
+  top: 0;
+  right: 10px;
+  bottom: 0;
+  width: 20px;
+  z-index: 20;
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 4px;
+  opacity: 0;
+  pointer-events: auto;
+  transition: opacity 190ms ease;
+}
+
+.transientScrollbarVisible {
+  opacity: 1;
+}
+
+.transientScrollbarTrack {
+  position: relative;
+  width: 4px;
+  height: 100%;
+}
+
+.transientScrollbarThumb {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 4px;
+  min-height: 34px;
+  border-radius: var(--radius-full);
+  cursor: grab;
+  background: rgb(255 255 255 / 28%);
+  transition:
+    width 160ms ease,
+    background 160ms ease;
+}
+
+.transientScrollbarHitArea:hover .transientScrollbarThumb,
+.transientScrollbarThumbActive {
+  width: 5px;
+  cursor: grabbing;
+  background: rgb(255 255 255 / 42%);
 }
 
 .fullBleedContent {

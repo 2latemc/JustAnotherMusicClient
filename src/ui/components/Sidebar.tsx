@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useSyncExternalStore } from "react";
 import {
   IconDisc,
+  IconFolder,
   IconHeart,
   IconPlaylist,
   IconRefresh,
@@ -11,9 +12,14 @@ import {
   getRecentPlaylistTimestamp,
   subscribeToRecentPlaylists,
 } from "../../player/recentPlaylists";
+import {
+  getLocalPlaylistItems,
+  subscribeToLocalPlaylists,
+} from "../../player/localPlaylists";
 import styles from "./Sidebar.module.css";
 import { ArtistLinks } from "./ArtistLinks";
 import { TrackArtwork } from "./TrackArtwork";
+import { usePlaylistContextMenu } from "./PlaylistContextMenu";
  
 const PLAYLIST_ORDER_KEY = "ytc-sidebar-playlist-order";
 const ALBUM_ORDER_KEY = "ytc-sidebar-album-order";
@@ -102,6 +108,14 @@ function SidebarPlaylistArtwork({ playlist }: { playlist: Playlist }) {
     );
   }
 
+  if (playlist.kind === "local") {
+    return (
+      <div className={`${styles.albumPreview} ${styles.albumPreviewFallback}`}>
+        <IconFolder size={24} stroke={1.8} aria-hidden="true" />
+      </div>
+    );
+  }
+
   return (
     <TrackArtwork
       className={styles.albumPreview}
@@ -120,6 +134,7 @@ export function Sidebar({
   onNavigatePlaylist,
 }: SidebarProps) {
   const libraryState = useLibraryState();
+  const { openPlaylistMenu, openAlbumMenu } = usePlaylistContextMenu();
   const [libraryView, setLibraryView] = useState<LibraryView>("playlists");
   const [recentPlaylistsRevision, setRecentPlaylistsRevision] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
@@ -131,6 +146,11 @@ export function Sidebar({
   );
   const [draggedItem, setDraggedItem] = useState<{ id: string; type: LibraryView } | null>(null);
   const [dropTarget, setDropTarget] = useState<{ id: string; type: LibraryView; insertAfter: boolean } | null>(null);
+  const localPlaylists = useSyncExternalStore(
+    subscribeToLocalPlaylists,
+    getLocalPlaylistItems,
+    getLocalPlaylistItems,
+  );
   const sidebarRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const draggedElementRef = useRef<HTMLElement | null>(null);
@@ -157,7 +177,7 @@ export function Sidebar({
 
   const isCollapsed = width <= COLLAPSED_WIDTH;
   const shouldHideText = width <= TEXT_HIDE_THRESHOLD;
-  const hasUserCreatedPlaylists = (libraryState.library?.playlists.length ?? 0) > 0;
+  const hasUserCreatedPlaylists = (libraryState.library?.playlists.length ?? 0) + localPlaylists.length > 0;
   const hasLoadedLibrary = Boolean(libraryState.library);
   const showPlaylistRetry =
     libraryView === "playlists" &&
@@ -196,9 +216,10 @@ export function Sidebar({
 
   const playlists = useMemo(() => {
     const likedSongsPlaylist = libraryState.library?.likedSongsPlaylist;
+    const remotePlaylists = libraryState.library?.playlists ?? [];
     const libraryPlaylists = likedSongsPlaylist
-      ? [likedSongsPlaylist, ...(libraryState.library?.playlists ?? [])]
-      : libraryState.library?.playlists ?? [];
+      ? [likedSongsPlaylist, ...localPlaylists, ...remotePlaylists]
+      : [...localPlaylists, ...remotePlaylists];
     if (!libraryPlaylists.length) return [];
 
     const playlistById = new Map(libraryPlaylists.map((playlist) => [playlist.id, playlist]));
@@ -218,7 +239,7 @@ export function Sidebar({
     }
 
     const defaultPlaylists = libraryPlaylists
-      .filter((playlist) => playlist.id !== likedSongsPlaylist?.id)
+      .filter((playlist) => playlist.id !== likedSongsPlaylist?.id && playlist.kind !== "local")
       .map((playlist, libraryIndex) => ({
         playlist,
         libraryIndex,
@@ -229,11 +250,12 @@ export function Sidebar({
       )
       .map(({ playlist }) => playlist);
     return likedSongsPlaylist
-      ? [likedSongsPlaylist, ...defaultPlaylists]
-      : defaultPlaylists;
+      ? [likedSongsPlaylist, ...localPlaylists, ...defaultPlaylists]
+      : [...localPlaylists, ...defaultPlaylists];
   }, [
     libraryState.library?.likedSongsPlaylist,
     libraryState.library?.playlists,
+    localPlaylists,
     playlistOrder,
     recentPlaylistsRevision,
   ]);
@@ -284,14 +306,15 @@ export function Sidebar({
   );
 
   useEffect(() => {
-    if (!libraryState.library) return;
+    if (!libraryState.library && !localPlaylists.length) return;
     const playlistIds = [
-      libraryState.library.likedSongsPlaylist.id,
-      ...libraryState.library.playlists.map((playlist) => playlist.id),
+      ...(libraryState.library?.likedSongsPlaylist ? [libraryState.library.likedSongsPlaylist.id] : []),
+      ...localPlaylists.map((playlist) => playlist.id),
+      ...(libraryState.library?.playlists.map((playlist) => playlist.id) ?? []),
     ];
     if (playlistOrder.length > 0) {
       const normalized = [
-        ...(playlistOrder.includes("LM") ? [] : ["LM"]),
+        ...(libraryState.library?.likedSongsPlaylist && !playlistOrder.includes("LM") ? ["LM"] : []),
         ...playlistOrder.filter((id) => playlistIds.includes(id)),
         ...playlistIds.filter((id) => !playlistOrder.includes(id)),
       ].filter((id, index, ids) => ids.indexOf(id) === index);
@@ -310,6 +333,7 @@ export function Sidebar({
   }, [
     libraryState.library?.likedSongsPlaylist,
     libraryState.library?.playlists,
+    localPlaylists,
     playlistOrder,
   ]);
 
@@ -621,6 +645,13 @@ export function Sidebar({
                     onNavigateAlbum(album);
                   }
                 })}
+                onContextMenu={(event) => {
+                  if (album.id === "LM" && libraryState.library?.likedSongsPlaylist) {
+                    openPlaylistMenu(event, libraryState.library.likedSongsPlaylist);
+                    return;
+                  }
+                  openAlbumMenu(event, album);
+                }}
                 title={shouldHideText ? `${album.title} by ${album.artist}` : undefined}
               >
                 <SidebarAlbumArtwork album={album} />
@@ -648,6 +679,7 @@ export function Sidebar({
                     className={`${styles.albumItem} ${shouldHideText ? styles.centered : ""} ${draggedItem?.id === playlist.id && draggedItem.type === "playlists" ? styles.dragging : ""} ${dropTarget?.id === playlist.id && dropTarget?.type === "playlists" && !dropTarget.insertAfter ? styles.dropBefore : ""} ${dropTarget?.id === playlist.id && dropTarget?.type === "playlists" && dropTarget.insertAfter ? styles.dropAfter : ""}`}
                     onPointerDown={(event) => handleSidebarItemPointerDown(event, playlist.id, "playlists")}
                     onClick={() => handleSidebarItemClick(() => onNavigatePlaylist(playlist))}
+                    onContextMenu={(event) => openPlaylistMenu(event, playlist)}
                     title={shouldHideText ? `${playlist.title} by ${playlist.owner}` : undefined}
                   >
                     <SidebarPlaylistArtwork playlist={playlist} />

@@ -1,7 +1,7 @@
 {
   "name": "just-another-music-client",
   "private": true,
-  "version": "1.2.72",
+  "version": "1.2.73",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,6 +13,7 @@
     "@tabler/icons-react": "^3.44.0",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-autostart": "^2.5.1",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.10.1",

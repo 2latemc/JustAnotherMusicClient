@@ -1,4 +1,4 @@
-export type TrackSource = "youtube";
+export type TrackSource = "youtube" | "local";
 
 export interface ArtistReference {
   id: string;
@@ -17,6 +17,7 @@ export interface Track {
   playlistItemId?: string;
   viewCount?: number;
   viewCountText?: string;
+  localPath?: string;
 }
 
 export interface LyricLine {
@@ -46,9 +47,10 @@ export interface Playlist {
   title: string;
   owner: string;
   artworkUrl?: string;
-  kind?: "playlist" | "liked-songs";
+  kind?: "playlist" | "liked-songs" | "local";
   isSaved?: boolean;
   isEditable?: boolean;
+  localPaths?: string[];
 }
 
 export interface Artist {

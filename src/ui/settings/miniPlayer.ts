@@ -17,8 +17,12 @@ import {
 
 const STORAGE_KEY = "mini-player-enabled";
 const POSITION_STORAGE_KEY = "mini-player-position";
+const HOVER_ACTION_STORAGE_KEY = "mini-player-hover-action";
 const CHANGE_EVENT = "mini-player-enabled-change";
+const HOVER_ACTION_CHANGE_EVENT = "mini-player-hover-action-change";
 const MINI_PLAYER_BOTTOM_MARGIN = 24;
+
+export type MiniPlayerHoverAction = "seek" | "volume";
 
 export interface MiniPlayerPosition {
   x: number;
@@ -38,12 +42,30 @@ function readMiniPlayerEnabled() {
   return readLocalBooleanSetting(STORAGE_KEY, true);
 }
 
+function isMiniPlayerHoverAction(value: unknown): value is MiniPlayerHoverAction {
+  return value === "seek" || value === "volume";
+}
+
+function readMiniPlayerHoverAction() {
+  return readLocalJsonSetting(HOVER_ACTION_STORAGE_KEY, isMiniPlayerHoverAction) ?? "seek";
+}
+
 function subscribe(callback: () => void) {
   window.addEventListener(CHANGE_EVENT, callback);
   window.addEventListener("storage", callback);
 
   return () => {
     window.removeEventListener(CHANGE_EVENT, callback);
+    window.removeEventListener("storage", callback);
+  };
+}
+
+function subscribeHoverAction(callback: () => void) {
+  window.addEventListener(HOVER_ACTION_CHANGE_EVENT, callback);
+  window.addEventListener("storage", callback);
+
+  return () => {
+    window.removeEventListener(HOVER_ACTION_CHANGE_EVENT, callback);
     window.removeEventListener("storage", callback);
   };
 }
@@ -64,11 +86,28 @@ export function saveMiniPlayerPosition(position: MiniPlayerPosition) {
   writeLocalJsonSetting(POSITION_STORAGE_KEY, position);
 }
 
+export function setMiniPlayerHoverAction(action: MiniPlayerHoverAction) {
+  writeLocalJsonSetting(HOVER_ACTION_STORAGE_KEY, action);
+  window.dispatchEvent(new Event(HOVER_ACTION_CHANGE_EVENT));
+}
+
 export async function hydrateMiniPlayerSettings() {
+  const storedHoverAction = readLocalJsonSetting(
+    HOVER_ACTION_STORAGE_KEY,
+    isMiniPlayerHoverAction,
+  ) ?? "seek";
+
   await Promise.all([
     hydrateLocalBooleanSetting(STORAGE_KEY, true, CHANGE_EVENT),
     hydrateLocalJsonSetting(POSITION_STORAGE_KEY, isMiniPlayerPosition),
+    hydrateLocalJsonSetting(HOVER_ACTION_STORAGE_KEY, isMiniPlayerHoverAction),
   ]);
+
+  if (!readLocalJsonSetting(HOVER_ACTION_STORAGE_KEY, isMiniPlayerHoverAction)) {
+    setMiniPlayerHoverAction(storedHoverAction);
+  }
+
+  window.dispatchEvent(new Event(HOVER_ACTION_CHANGE_EVENT));
 }
 
 export async function resetMiniPlayerPosition() {
@@ -88,4 +127,8 @@ export async function resetMiniPlayerPosition() {
 
 export function useMiniPlayerEnabled() {
   return useSyncExternalStore(subscribe, readMiniPlayerEnabled, () => true);
+}
+
+export function useMiniPlayerHoverAction() {
+  return useSyncExternalStore(subscribeHoverAction, readMiniPlayerHoverAction, () => "seek");
 }

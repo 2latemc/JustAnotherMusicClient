@@ -24,6 +24,18 @@
   color: var(--color-text-secondary);
 }
 
+.loadingState {
+  min-height: 96px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+}
+
+.loadingIcon {
+  animation: loadingIconSpin 800ms linear infinite;
+}
+
 .list {
   display: flex;
   flex-direction: column;
@@ -171,4 +183,38 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.resultEntering {
+  animation: resultEnter 360ms var(--easing-smooth) both;
+  animation-delay: var(--search-enter-delay, 0ms);
+}
+
+@keyframes loadingIconSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes resultEnter {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.985);
+  }
+
+  70% {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loadingIcon,
+  .resultEntering {
+    animation: none;
+  }
 }

@@ -3,17 +3,12 @@
 
 #[cfg(target_os = "windows")]
 fn set_windows_app_identity() {
-    use windows::{
-        core::w,
-        Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID,
-    };
+    use windows::{core::w, Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID};
 
     if let Err(error) =
         unsafe { SetCurrentProcessExplicitAppUserModelID(w!("com.justanothermusicclient.desktop")) }
     {
-        eprintln!(
-            "[internal][tauri][warn] unable to set Windows AppUserModelID: {error}"
-        );
+        eprintln!("[internal][tauri][warn] unable to set Windows AppUserModelID: {error}");
     }
 }
 

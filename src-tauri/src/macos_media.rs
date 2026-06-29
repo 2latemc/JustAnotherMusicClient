@@ -87,12 +87,18 @@ fn install_remote_command_handler(
             "pauseCommand" => msg_send![center, pauseCommand],
             "nextTrackCommand" => msg_send![center, nextTrackCommand],
             "previousTrackCommand" => msg_send![center, previousTrackCommand],
-            _ => return Err(format!("unsupported macOS media command: {command_selector}")),
+            _ => {
+                return Err(format!(
+                    "unsupported macOS media command: {command_selector}"
+                ))
+            }
         }
     };
 
     if command.is_null() {
-        return Err(format!("macOS media command unavailable: {command_selector}"));
+        return Err(format!(
+            "macOS media command unavailable: {command_selector}"
+        ));
     }
 
     let app = app.clone();
@@ -161,21 +167,13 @@ fn set_now_playing_info(update: MediaSessionUpdate) {
     }
 }
 
-fn insert_string(
-    info: &NSMutableDictionary<NSString, AnyObject>,
-    key: &NSString,
-    value: &str,
-) {
+fn insert_string(info: &NSMutableDictionary<NSString, AnyObject>, key: &NSString, value: &str) {
     let value = NSString::from_str(value);
     let value: Retained<AnyObject> = value.into();
     info.insert(key, &value);
 }
 
-fn insert_number(
-    info: &NSMutableDictionary<NSString, AnyObject>,
-    key: &NSString,
-    value: f64,
-) {
+fn insert_number(info: &NSMutableDictionary<NSString, AnyObject>, key: &NSString, value: f64) {
     let value = NSNumber::new_f64(value);
     let value: Retained<AnyObject> = value.into();
     info.insert(key, &value);

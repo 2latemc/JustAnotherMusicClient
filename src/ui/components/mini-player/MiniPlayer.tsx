@@ -4,7 +4,10 @@ import {
   useState,
   type CSSProperties,
   type FocusEvent,
+  type FormEvent,
+  type KeyboardEvent,
   type MouseEvent,
+  type PointerEvent,
 } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
 import { cursorPosition, getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
@@ -17,7 +20,7 @@ import {
   IconPlayerSkipForward,
   IconX,
 } from "@tabler/icons-react";
-import { saveMiniPlayerPosition } from "../../settings/miniPlayer";
+import { saveMiniPlayerPosition, useMiniPlayerHoverAction } from "../../settings/miniPlayer";
 import { isLinux, isMacOS, isWindows } from "../../platform";
 import { TrackArtwork } from "../TrackArtwork";
 import styles from "./MiniPlayer.module.css";
@@ -34,11 +37,19 @@ interface TimeSync {
   duration: number;
 }
 
+interface VolumeSync {
+  muted: boolean;
+  volume: number;
+}
+
 const win = getCurrentWindow();
 const PILL_WIDTH = 160;
 const BOTTOM_PILL_HEIGHT = 40;
-const TOP_PILL_HEIGHT = 28;
+const TOP_PILL_HEIGHT = 36;
 const GAP = 2;
+const HOVER_MARGIN_X = 10;
+const HOVER_MARGIN_Y = 8;
+const COLLAPSE_GRACE_MS = 300;
 const RIGHT_MOUSE_BUTTON = 2;
 const LEFT_MOUSE_BUTTON = 0;
 const INTERACTIVE_SELECTOR = "button, input, a, [role='button']";
@@ -53,9 +64,20 @@ export default function MiniPlayer() {
   const [expanded, setExpanded] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [timeState, setTimeState] = useState<TimeSync>({ currentTime: 0, duration: 0 });
+  const [volumeState, setVolumeState] = useState<VolumeSync>({ muted: false, volume: 1 });
+  const [seekPreviewTime, setSeekPreviewTime] = useState<number | null>(null);
+  const [volumePreview, setVolumePreview] = useState<number | null>(null);
   const [cachedArtwork, setCachedArtwork] = useState<string | null>(null);
+  const hoverAction = useMiniPlayerHoverAction();
   const expandedRef = useRef(false);
   const dragTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const seekPreviewClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const volumePreviewClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isSeekScrubbingRef = useRef(false);
+  const isSliderActiveRef = useRef(false);
+  const lastSliderInputTimeStampRef = useRef<number | null>(null);
+  const seekTargetRef = useRef(0);
+  const pendingSeekTargetRef = useRef<number | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const macAlbumDragActiveRef = useRef(false);
   const macAlbumDragMovedRef = useRef(false);
@@ -112,6 +134,12 @@ export default function MiniPlayer() {
       if (dragTimerRef.current) {
         clearInterval(dragTimerRef.current);
       }
+      if (seekPreviewClearTimerRef.current) {
+        clearTimeout(seekPreviewClearTimerRef.current);
+      }
+      if (volumePreviewClearTimerRef.current) {
+        clearTimeout(volumePreviewClearTimerRef.current);
+      }
       setIsDragging(false);
     };
   }, []);
@@ -120,6 +148,48 @@ export default function MiniPlayer() {
     const setup = async () => {
       const unlisten = await listen<TimeSync>("player-time-sync", (event) => {
         setTimeState(event.payload);
+      });
+
+      return unlisten;
+    };
+
+    const cleanup = setup();
+    return () => { cleanup.then((unlisten) => unlisten()); };
+  }, []);
+
+  useEffect(() => {
+    const pendingSeekTarget = pendingSeekTargetRef.current;
+    if (pendingSeekTarget === null) return;
+
+    if (Math.abs(timeState.currentTime - pendingSeekTarget) <= 0.75) {
+      pendingSeekTargetRef.current = null;
+      setSeekPreviewTime(null);
+      if (seekPreviewClearTimerRef.current) {
+        clearTimeout(seekPreviewClearTimerRef.current);
+        seekPreviewClearTimerRef.current = null;
+      }
+    }
+  }, [timeState.currentTime]);
+
+  useEffect(() => {
+    isSeekScrubbingRef.current = false;
+    pendingSeekTargetRef.current = null;
+    setSeekPreviewTime(null);
+    setVolumePreview(null);
+    if (seekPreviewClearTimerRef.current) {
+      clearTimeout(seekPreviewClearTimerRef.current);
+      seekPreviewClearTimerRef.current = null;
+    }
+    if (volumePreviewClearTimerRef.current) {
+      clearTimeout(volumePreviewClearTimerRef.current);
+      volumePreviewClearTimerRef.current = null;
+    }
+  }, [hoverAction]);
+
+  useEffect(() => {
+    const setup = async () => {
+      const unlisten = await listen<VolumeSync>("player-volume-sync", (event) => {
+        setVolumeState(event.payload);
       });
 
       return unlisten;
@@ -148,6 +218,7 @@ export default function MiniPlayer() {
     if (isMacOS || isLinux) return;
 
     let isOver = false;
+    let lastOverAt = 0;
     let hasEnabledPassThrough = false;
     let running = true;
     let timer: ReturnType<typeof setTimeout>;
@@ -168,20 +239,29 @@ export default function MiniPlayer() {
           ? BOTTOM_PILL_HEIGHT + GAP + TOP_PILL_HEIGHT
           : BOTTOM_PILL_HEIGHT;
 
-        const pillLeft = position.x + (size.width - PILL_WIDTH) / 2;
+        const pillLeft = position.x + (size.width - PILL_WIDTH) / 2 - HOVER_MARGIN_X;
         const pillBottom = position.y + size.height;
-        const pillTop = pillBottom - totalHeight;
-        const pillRight = pillLeft + PILL_WIDTH;
+        const pillTop = pillBottom - totalHeight - HOVER_MARGIN_Y;
+        const pillRight = pillLeft + PILL_WIDTH + (HOVER_MARGIN_X * 2);
+        const hoverBottom = pillBottom + HOVER_MARGIN_Y;
         const over = cursor.x >= pillLeft
           && cursor.x <= pillRight
           && cursor.y >= pillTop
-          && cursor.y <= pillBottom;
+          && cursor.y <= hoverBottom;
 
-        if (over && !isOver) {
+        if (over) {
+          lastOverAt = Date.now();
+        }
+
+        const shouldStayOpen = isSliderActiveRef.current
+          || over
+          || (isOver && Date.now() - lastOverAt < COLLAPSE_GRACE_MS);
+
+        if (shouldStayOpen && !isOver) {
           isOver = true;
           await setIgnoreCursorEventsWhenReady(false);
           setExpandedBoth(true);
-        } else if (!over && isOver) {
+        } else if (!shouldStayOpen && isOver) {
           isOver = false;
           await setIgnoreCursorEventsWhenReady(true);
           setExpandedBoth(false);
@@ -443,6 +523,7 @@ export default function MiniPlayer() {
     if (!isMacOS && !isLinux) return;
     const nextTarget = event.relatedTarget;
     if (nextTarget instanceof Node && wrapperRef.current?.contains(nextTarget)) return;
+    if (isSliderActiveRef.current) return;
     setExpandedBoth(false);
   };
 
@@ -450,15 +531,131 @@ export default function MiniPlayer() {
     if (!isMacOS && !isLinux) return;
     const nextTarget = event.relatedTarget;
     if (nextTarget instanceof Node && wrapperRef.current?.contains(nextTarget)) return;
+    if (isSliderActiveRef.current) return;
     setExpandedBoth(false);
+  };
+
+  const keepSeekPreviewUntilSync = (target: number) => {
+    pendingSeekTargetRef.current = target;
+    if (seekPreviewClearTimerRef.current) {
+      clearTimeout(seekPreviewClearTimerRef.current);
+    }
+    seekPreviewClearTimerRef.current = setTimeout(() => {
+      pendingSeekTargetRef.current = null;
+      setSeekPreviewTime(null);
+      seekPreviewClearTimerRef.current = null;
+    }, 1200);
+  };
+
+  const keepVolumePreviewUntilSync = () => {
+    if (volumePreviewClearTimerRef.current) {
+      clearTimeout(volumePreviewClearTimerRef.current);
+    }
+    volumePreviewClearTimerRef.current = setTimeout(() => {
+      setVolumePreview(null);
+      volumePreviewClearTimerRef.current = null;
+    }, 500);
+  };
+
+  const finishSliderInteraction = () => {
+    isSliderActiveRef.current = false;
+    if (isMacOS || isLinux) {
+      setExpandedBoth(false);
+    }
+  };
+
+  const handleSliderPointerDown = (event: PointerEvent<HTMLInputElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    isSliderActiveRef.current = true;
+    setExpandedBoth(true);
+    if (hoverAction !== "seek") return;
+
+    isSeekScrubbingRef.current = true;
+    const target = Number(event.currentTarget.value);
+    seekTargetRef.current = target;
+    setSeekPreviewTime(target);
+  };
+
+  const handleSliderPointerEnd = () => {
+    if (hoverAction !== "seek") {
+      keepVolumePreviewUntilSync();
+      finishSliderInteraction();
+      return;
+    }
+
+    if (!isSeekScrubbingRef.current) {
+      finishSliderInteraction();
+      return;
+    }
+
+    isSeekScrubbingRef.current = false;
+    const target = seekTargetRef.current;
+    setSeekPreviewTime(target);
+    keepSeekPreviewUntilSync(target);
+    void emit("mini-player:seek", { time: target });
+    finishSliderInteraction();
+  };
+
+  const handleSliderPointerCancel = () => {
+    isSeekScrubbingRef.current = false;
+    isSliderActiveRef.current = false;
+    pendingSeekTargetRef.current = null;
+    setSeekPreviewTime(null);
+    setVolumePreview(null);
+  };
+
+  const handleSliderInput = (event: FormEvent<HTMLInputElement>) => {
+    if (event.timeStamp === lastSliderInputTimeStampRef.current) return;
+    lastSliderInputTimeStampRef.current = event.timeStamp;
+
+    const value = parseFloat(event.currentTarget.value);
+    if (hoverAction === "volume") {
+      setVolumePreview(value);
+      void emit("mini-player:volume", { volume: value });
+      return;
+    }
+
+    seekTargetRef.current = value;
+    setSeekPreviewTime(value);
+    if (!isSeekScrubbingRef.current) {
+      keepSeekPreviewUntilSync(value);
+      void emit("mini-player:seek", { time: value });
+    }
+  };
+
+  const handleSliderKeyUp = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (
+      hoverAction !== "seek"
+      || !["ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"].includes(event.key)
+    ) {
+      return;
+    }
+
+    const target = seekTargetRef.current;
+    keepSeekPreviewUntilSync(target);
+    void emit("mini-player:seek", { time: target });
   };
 
   const isPlaying = playerState.status === "playing";
   const isLoading = playerState.status === "loading";
   const artworkUrl = playerState.artworkUrl ?? cachedArtwork;
+  const displayedVolume = volumePreview ?? (volumeState.muted ? 0 : volumeState.volume);
+  const displayedTime = seekPreviewTime ?? timeState.currentTime;
+  const sliderValue = hoverAction === "volume" ? displayedVolume : displayedTime;
+  const sliderMax = hoverAction === "volume" ? 1 : timeState.duration || 100;
+  const sliderStep = hoverAction === "volume" ? 0.01 : "any";
+  const sliderProgress = hoverAction === "volume"
+    ? displayedVolume * 100
+    : timeState.duration > 0
+      ? (displayedTime / timeState.duration) * 100
+      : 0;
 
   return (
-    <div ref={wrapperRef} className={styles.wrapper} onBlur={handleMacFocusOut}>
+    <div
+      ref={wrapperRef}
+      className={`${styles.wrapper} ${expanded ? styles.wrapperExpanded : ""}`}
+      onBlur={handleMacFocusOut}
+    >
       <div
         className={`${styles.expandedPill} ${expanded ? styles.expandedPillVisible : ""}`}
         onMouseEnter={handleMacPointerEnter}
@@ -467,15 +664,19 @@ export default function MiniPlayer() {
         <input
           type="range"
           min={0}
-          max={timeState.duration || 100}
-          step="any"
-          value={timeState.currentTime}
-          onChange={(event) => {
-            void emit("mini-player:seek", { time: parseFloat(event.target.value) });
-          }}
+          max={sliderMax}
+          step={sliderStep}
+          value={sliderValue}
+          onInput={handleSliderInput}
+          onChange={handleSliderInput}
+          onKeyUp={handleSliderKeyUp}
+          onPointerDown={handleSliderPointerDown}
+          onPointerUp={handleSliderPointerEnd}
+          onPointerCancel={handleSliderPointerCancel}
           className={styles.scrubberInput}
+          aria-label={hoverAction === "volume" ? "Volume" : "Song position"}
           style={{
-            "--slider-progress": `${timeState.duration > 0 ? (timeState.currentTime / timeState.duration) * 100 : 0}%`,
+            "--slider-progress": `${sliderProgress}%`,
           } as CSSProperties}
         />
       </div>

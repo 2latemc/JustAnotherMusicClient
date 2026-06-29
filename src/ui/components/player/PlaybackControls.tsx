@@ -20,6 +20,7 @@ export function PlaybackControls({ extraControlsAlwaysVisible = true }: Playback
   const state = usePlayerState();
   const isBusy = state.status === "loading";
   const isPlaying = state.status === "playing";
+  const hasCurrentTrack = Boolean(state.currentTrack);
 
   const handlePlayPause = () => {
     void playerController.togglePlayPause();
@@ -43,7 +44,7 @@ export function PlaybackControls({ extraControlsAlwaysVisible = true }: Playback
         type="button"
         className={`${styles.controlButton} ${styles.skipButton}`}
         onClick={handleSkipPrevious}
-        disabled={isBusy || !state.currentTrack}
+        disabled={!hasCurrentTrack}
         aria-label="Previous track"
       >
         <IconPlayerSkipBack size={20} />
@@ -53,7 +54,7 @@ export function PlaybackControls({ extraControlsAlwaysVisible = true }: Playback
         type="button"
         className={`${styles.controlButton} ${styles.playPauseButton}`}
         onClick={handlePlayPause}
-        disabled={isBusy || !state.currentTrack}
+        disabled={isBusy || !hasCurrentTrack}
         aria-label={isBusy ? "Loading song" : isPlaying ? "Pause" : "Play"}
       >
         <span className={styles.iconStage} aria-hidden="true">
@@ -75,7 +76,7 @@ export function PlaybackControls({ extraControlsAlwaysVisible = true }: Playback
         type="button"
         className={`${styles.controlButton} ${styles.skipButton}`}
         onClick={handleSkipNext}
-        disabled={isBusy || !state.currentTrack}
+        disabled={!hasCurrentTrack}
         aria-label="Next track"
       >
         <IconPlayerSkipForward size={20} />

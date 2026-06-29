@@ -35,6 +35,7 @@ export interface PlayerSession {
 }
 
 type Listener = () => void;
+const DISCORD_ASSET_URL_LIMIT = 256;
 
 function isYouTubePlayerError5(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
@@ -45,6 +46,48 @@ function normalizePlaybackOrderMode(mode: unknown): PlaybackOrderMode {
   if (mode === "shuffle") return "shuffle";
   if (mode === "repeat-one" || mode === "repeat-all") return "repeat-one";
   return "in-order";
+}
+
+function getYouTubeMusicTrackUrl(track: Track): string | undefined {
+  if (track.source !== "youtube" || !track.id) return undefined;
+  return `https://music.youtube.com/watch?v=${encodeURIComponent(track.id)}`;
+}
+
+function getYouTubeMusicArtistUrl(track: Track): string | undefined {
+  if (track.source !== "youtube") return undefined;
+
+  const artistId = track.artists?.find((artist) => artist.id)?.id;
+  if (!artistId) return undefined;
+
+  const encodedId = encodeURIComponent(artistId);
+  return artistId.startsWith("UC")
+    ? `https://music.youtube.com/channel/${encodedId}`
+    : `https://music.youtube.com/browse/${encodedId}`;
+}
+
+function getYouTubeMusicAlbumUrl(track: Track): string | undefined {
+  if (track.source !== "youtube" || !track.album) return undefined;
+
+  const query = `${track.album} ${track.artist}`.trim();
+  if (!query) return undefined;
+
+  return `https://music.youtube.com/search?q=${encodeURIComponent(query)}`;
+}
+
+function getDiscordArtworkUrl(track: Track): string | undefined {
+  // For YouTube tracks, always prefer the i.ytimg.com thumbnail URL since
+  // Google CDN URLs (lh3.googleusercontent.com, yt3.ggpht.com) are frequently
+  // blocked by Discord's image fetcher due to hotlink protection.
+  if (track.source === "youtube" && /^[A-Za-z0-9_-]{11}$/.test(track.id)) {
+    return `https://i.ytimg.com/vi/${track.id}/hqdefault.jpg`;
+  }
+
+  // For non-YouTube tracks, use the artwork URL directly if available and within limits
+  if (track.artworkUrl && track.artworkUrl.length <= DISCORD_ASSET_URL_LIMIT) {
+    return track.artworkUrl;
+  }
+
+  return track.artworkUrl;
 }
 
 export class PlayerController {
@@ -184,10 +227,12 @@ export class PlayerController {
         }
       }
 
-      const fetchedTrack = await this.dataSource.getTrack(videoId);
-      if (requestId !== this.playTrackRequestId) return false;
       const queuedTrack = playbackQueue?.find((item) => item.id === videoId)
         ?? this.queue.all.find((item) => item.id === videoId);
+      const fetchedTrack = queuedTrack?.source === "local"
+        ? queuedTrack
+        : await this.dataSource.getTrack(videoId);
+      if (requestId !== this.playTrackRequestId) return false;
       const track = queuedTrack
         ? {
             ...fetchedTrack,
@@ -305,6 +350,7 @@ export class PlayerController {
   }
 
   async skipToNext(): Promise<void> {
+    this.cancelLoadingPlayback();
     return this.queueNavigation(() => this.skipToNextNow());
   }
 
@@ -381,8 +427,22 @@ export class PlayerController {
   }
 
   private async skipToNextNow(): Promise<void> {
-    const shouldResume = this.state.status === "playing";
+    const shouldResume = this.shouldResumeAfterNavigation();
     const nextTrack = this.queue.next(false);
+    if (
+      (!nextTrack || nextTrack.id === this.state.currentTrack?.id)
+      && this.state.currentTrack
+    ) {
+      const queueEndTrack = await this.loadQueueEndRecommendations(this.state.currentTrack);
+      if (queueEndTrack) {
+        if (shouldResume) {
+          await this.playTrackById(queueEndTrack.id);
+        } else {
+          await this.loadTrack(queueEndTrack);
+        }
+      }
+      if (queueEndTrack || !this.autoplayEnabled) return;
+    }
     if (
       (!nextTrack || nextTrack.id === this.state.currentTrack?.id)
       && this.autoplayEnabled
@@ -430,6 +490,14 @@ export class PlayerController {
       }
 
       const seed = this.state.currentTrack;
+      if (seed) {
+        const queueEndTrack = await this.loadQueueEndRecommendations(seed);
+        if (queueEndTrack) {
+          await this.playTrackById(queueEndTrack.id);
+          return;
+        }
+      }
+
       if (!this.autoplayEnabled || !seed || !this.dataSource.getRecommendations) {
         this.setState({ status: "paused" });
         return;
@@ -454,26 +522,39 @@ export class PlayerController {
     if (this.queue.remainingAutomatic >= 10) return;
 
     if (this.isPlaylistMode) {
-      const sourceTracks = this.queue.getSourceTracks();
-      if (sourceTracks.length === 0) return;
-
-      const needCount = 15 - this.queue.remainingAutomatic;
-      const fill: Track[] = [];
-      for (let i = 0; fill.length < needCount; i += 1) {
-        fill.push(sourceTracks[i % sourceTracks.length]);
-      }
-      this.queue.appendAutomaticTracks(fill);
-      logInternalInfo("PlayerController.refillAutomaticQueue", {
-        mode: "playlist",
-        addedCount: fill.length,
-        totalAutomatic: this.queue.remainingAutomatic,
-      });
       return;
     }
 
     if (this.autoplayEnabled && this.state.currentTrack) {
       void this.primeRadioQueue(this.state.currentTrack, this.playTrackRequestId);
     }
+  }
+
+  private async loadQueueEndRecommendations(seed: Track): Promise<Track | null> {
+    if (!this.isPlaylistMode || !this.dataSource.getRecommendations) return null;
+
+    let recommendations: Track[];
+    try {
+      recommendations = await this.getVariedRecommendations(seed);
+    } catch (error) {
+      logInternalWarn("PlayerController.loadQueueEndRecommendations failed", {
+        seedTrackId: seed.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+
+    if (recommendations.length === 0) return null;
+
+    this.isPlaylistMode = false;
+    this.autoplayEnabled = true;
+    this.queue.set(recommendations, 0);
+    logInternalInfo("PlayerController.loadQueueEndRecommendations", {
+      seedTrackId: seed.id,
+      nextTrackId: recommendations[0].id,
+      recommendationCount: recommendations.length,
+    });
+    return recommendations[0];
   }
 
   private async getVariedRecommendations(seed: Track): Promise<Track[]> {
@@ -607,6 +688,23 @@ export class PlayerController {
 
     try {
       const startedAt = performance.now();
+      if (track.source === "local") {
+        const audioData = await this.dataSource.getStreamData?.(track);
+        if (!audioData) {
+          throw new Error("The data source does not support local audio playback.");
+        }
+        await this.audioEngine.loadNativeFallback(track.id, audioData.bytes, audioData.mimeType);
+        this.loadedTrackId = track.id;
+        if (this.pendingSeekTime !== null) {
+          this.audioEngine.seekTo(this.pendingSeekTime);
+          this.pendingSeekTime = null;
+        }
+        logInternalInfo("PlayerController.ensureTrackLoaded local success", {
+          trackId: track.id,
+          durationMs: Math.round(performance.now() - startedAt),
+        });
+        return;
+      }
       const audioData = this.audioEngine.usesNativeAudio()
         ? await this.dataSource.getStreamData?.(track)
         : undefined;
@@ -720,8 +818,11 @@ export class PlayerController {
       void DiscordRpcService.updatePresence({
         title: currentTrack.title,
         artist: currentTrack.artist,
-        album: currentTrack.title, // Use title as album since Track doesn't have album field
-        artworkUrl: currentTrack.artworkUrl,
+        album: currentTrack.album ?? "",
+        artworkUrl: getDiscordArtworkUrl(currentTrack),
+        songUrl: getYouTubeMusicTrackUrl(currentTrack),
+        artistUrl: getYouTubeMusicArtistUrl(currentTrack),
+        albumUrl: getYouTubeMusicAlbumUrl(currentTrack),
         duration: Math.floor(currentTrack.durationSec ?? 0),
         currentTime: Math.floor(Math.max(0, currentTime)),
         isPlaying: this.state.status === "playing",
@@ -763,11 +864,12 @@ export class PlayerController {
   }
 
   async skipToPrevious(): Promise<void> {
+    this.cancelLoadingPlayback();
     return this.queueNavigation(() => this.skipToPreviousNow());
   }
 
   private async skipToPreviousNow(): Promise<void> {
-    const shouldResume = this.state.status === "playing";
+    const shouldResume = this.shouldResumeAfterNavigation();
     let previousTrack = this.queue.prev(false);
     if (!previousTrack || previousTrack.id === this.state.currentTrack?.id) {
       let currentHistoryIndex = -1;
@@ -797,6 +899,19 @@ export class PlayerController {
     const request = this.navigationRequest.then(operation, operation);
     this.navigationRequest = request.catch(() => undefined);
     return request;
+  }
+
+  private shouldResumeAfterNavigation(): boolean {
+    return this.state.status === "playing" || this.state.status === "loading";
+  }
+
+  private cancelLoadingPlayback(): void {
+    if (this.state.status !== "loading") return;
+
+    this.playTrackRequestId += 1;
+    this.audioEngine.stop();
+    this.loadedTrackId = null;
+    this.pendingSeekTime = null;
   }
 
   suspendForTabSwitch(): void {

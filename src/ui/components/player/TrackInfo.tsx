@@ -46,10 +46,11 @@ export function TrackInfo() {
   const isLikeStatusLoading =
     (libraryState.status === "restoring" || libraryState.status === "loading")
     && !libraryState.library;
-  const isLikePending = libraryState.pendingLikeTrackIds.has(currentTrack.id);
-  const isLiked = libraryState.library?.likedSongs.some(
+  const canLikeCurrentTrack = currentTrack.source !== "local";
+  const isLikePending = canLikeCurrentTrack && libraryState.pendingLikeTrackIds.has(currentTrack.id);
+  const isLiked = canLikeCurrentTrack && (libraryState.library?.likedSongs.some(
     (track) => track.id === currentTrack.id,
-  ) ?? false;
+  ) ?? false);
 
   return (
     <div
@@ -83,39 +84,41 @@ export function TrackInfo() {
           <ArtistLinks artists={currentTrack.artists} fallback={currentTrack.artist} />
         </p>
       </div>
-      <button
-        type="button"
-        className={`${styles.likeButton} ${isLiked ? styles.liked : ""}`}
-        onClick={() => void toggleTrackLike(currentTrack)}
-        disabled={isLikeStatusLoading || isLikePending}
-        aria-label={
-          isLikeStatusLoading || isLikePending
-            ? "Loading like status"
-            : isLiked
-              ? "Remove like"
-              : libraryState.status === "signed-out"
-                ? "Sign in to like"
+      {canLikeCurrentTrack && (
+        <button
+          type="button"
+          className={`${styles.likeButton} ${isLiked ? styles.liked : ""}`}
+          onClick={() => void toggleTrackLike(currentTrack)}
+          disabled={isLikeStatusLoading || isLikePending}
+          aria-label={
+            isLikeStatusLoading || isLikePending
+              ? "Loading like status"
+              : isLiked
+                ? "Remove like"
+                : libraryState.status === "signed-out"
+                  ? "Sign in to like"
+                  : "Like song"
+          }
+          title={
+            libraryState.status === "signed-out"
+              ? "Sign in to like"
+              : isLiked
+                ? "Remove like"
                 : "Like song"
-        }
-        title={
-          libraryState.status === "signed-out"
-            ? "Sign in to like"
-            : isLiked
-              ? "Remove like"
-              : "Like song"
-        }
-      >
-        {isLikeStatusLoading || isLikePending ? (
-          <IconLoader2 className={styles.likeLoadingIcon} size={18} />
-        ) : isLiked ? (
-          <span className={styles.likedIconStage} aria-hidden="true">
-            <IconHeartFilled className={styles.likedHeartIcon} size={18} />
-            <IconHeartBroken className={styles.removeLikeIcon} size={18} />
-          </span>
-        ) : (
-          <IconHeart size={18} />
-        )}
-      </button>
+          }
+        >
+          {isLikeStatusLoading || isLikePending ? (
+            <IconLoader2 className={styles.likeLoadingIcon} size={18} />
+          ) : isLiked ? (
+            <span className={styles.likedIconStage} aria-hidden="true">
+              <IconHeartFilled className={styles.likedHeartIcon} size={18} />
+              <IconHeartBroken className={styles.removeLikeIcon} size={18} />
+            </span>
+          ) : (
+            <IconHeart size={18} />
+          )}
+        </button>
+      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 [package]
 name = "just-another-music-client"
-version = "1.2.72"
+version = "1.2.73"
 description = "A desktop music client"
 authors = ["you"]
 edition = "2021"
@@ -32,6 +32,8 @@ keyring = { version = "3.6", features = ["apple-native", "windows-native", "sync
 discord-rich-presence = "0.2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+tauri-plugin-dialog = "2"
+md5 = "0.8.0"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 aes-gcm = "0.10"
@@ -46,5 +48,10 @@ windows = { version = "0.61.3", features = [
   "Media",
   "Media_Playback",
   "Storage_Streams",
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_System_Com",
+  "Win32_UI_Controls",
   "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
 ] }

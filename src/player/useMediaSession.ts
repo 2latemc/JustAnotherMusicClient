@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { PlayerState } from "./PlayerController";
@@ -8,6 +8,7 @@ import { logInternalWarn } from "../internal/logging";
 type NativeMediaAction =
   | "play"
   | "pause"
+  | "playPause"
   | "next"
   | "previous"
   | { action: "seekTo"; positionSec: number };
@@ -45,6 +46,27 @@ export function useMediaSession(
 ): void {
   const nativeMediaCommand = useMemo(getNativeMediaCommand, []);
   const nativeMediaControlEvent = useMemo(getNativeMediaControlEvent, []);
+  const sendNativeMediaUpdate = useCallback((context: string, forceMetadata = false) => {
+    if (!nativeMediaCommand) return;
+
+    const track = state.currentTrack;
+    const duration = controller.getDuration() || track?.durationSec || 0;
+    void invoke(nativeMediaCommand, {
+      update: {
+        title: track?.title ?? null,
+        artist: track?.artist ?? null,
+        artworkUrl: track?.artworkUrl ?? null,
+        status: state.status,
+        durationSec: duration || null,
+        positionSec: getClampedPosition(duration, controller.getCurrentTime()),
+        forceMetadata,
+      },
+    }).catch((error) => {
+      logInternalWarn(`useMediaSession native ${context} update failed`, {
+        error: String(error),
+      });
+    });
+  }, [controller, nativeMediaCommand, state.currentTrack, state.status]);
 
   useEffect(() => {
     if (!nativeMediaControlEvent) return;
@@ -59,6 +81,7 @@ export function useMediaSession(
 
         if (payload === "play") void controller.play();
         if (payload === "pause") void controller.pause();
+        if (payload === "playPause") void controller.togglePlayPause();
         if (payload === "next") void controller.skipToNext();
         if (payload === "previous") void controller.skipToPrevious();
       },
@@ -72,49 +95,24 @@ export function useMediaSession(
   useEffect(() => {
     if (!nativeMediaCommand) return;
 
-    const track = state.currentTrack;
-    const duration = controller.getDuration() || track?.durationSec || 0;
-    void invoke(nativeMediaCommand, {
-      update: {
-        title: track?.title ?? null,
-        artist: track?.artist ?? null,
-        artworkUrl: track?.artworkUrl ?? null,
-        status: state.status,
-        durationSec: duration || null,
-        positionSec: getClampedPosition(duration, controller.getCurrentTime()),
-      },
-    }).catch((error) => {
-      logInternalWarn("useMediaSession native update failed", {
-        error: String(error),
-      });
-    });
-  }, [controller, nativeMediaCommand, state.currentTrack, state.status]);
+    sendNativeMediaUpdate("state", true);
+    const retryDelaysMs = [250, 1000, 2500];
+    const retryIds = retryDelaysMs.map((delayMs) => (
+      window.setTimeout(() => sendNativeMediaUpdate("state retry", true), delayMs)
+    ));
+    return () => retryIds.forEach((retryId) => window.clearTimeout(retryId));
+  }, [nativeMediaCommand, sendNativeMediaUpdate]);
 
   useEffect(() => {
     if (!nativeMediaCommand || !state.currentTrack) return;
 
-    const updateNativePosition = () => {
-      const duration = controller.getDuration() || state.currentTrack?.durationSec || 0;
-      void invoke(nativeMediaCommand, {
-        update: {
-          title: state.currentTrack?.title ?? null,
-          artist: state.currentTrack?.artist ?? null,
-          artworkUrl: state.currentTrack?.artworkUrl ?? null,
-          status: state.status,
-          durationSec: duration || null,
-          positionSec: getClampedPosition(duration, controller.getCurrentTime()),
-        },
-      }).catch((error) => {
-        logInternalWarn("useMediaSession native position update failed", {
-          error: String(error),
-        });
-      });
-    };
-
-    updateNativePosition();
-    const intervalId = window.setInterval(updateNativePosition, 1000);
+    sendNativeMediaUpdate("position");
+    const intervalId = window.setInterval(
+      () => sendNativeMediaUpdate("position"),
+      1000,
+    );
     return () => window.clearInterval(intervalId);
-  }, [controller, nativeMediaCommand, state.currentTrack, state.status]);
+  }, [nativeMediaCommand, sendNativeMediaUpdate, state.currentTrack]);
 
   useEffect(() => {
     if (usesNativeMediaSession || !("mediaSession" in navigator)) return;

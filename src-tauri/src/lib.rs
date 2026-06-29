@@ -9,7 +9,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -36,12 +36,13 @@ use aes_gcm::{
 #[cfg(target_os = "macos")]
 use rand::{rngs::OsRng, RngCore};
 
-#[cfg(target_os = "windows")]
-mod windows_media;
 #[cfg(target_os = "macos")]
 mod macos_media;
+#[cfg(target_os = "windows")]
+mod windows_media;
 
 mod discord_rpc;
+mod lastfm;
 
 // Keep the legacy service name so existing sign-in credentials survive the product rename.
 const KEYRING_SERVICE: &str = "com.ytmusicdock.app";
@@ -61,6 +62,9 @@ const YOUTUBE_COOKIE_CHUNK_SIZE: usize = 900;
 const YOUTUBE_COOKIE_MAX_CHUNKS: usize = 16;
 const DEFAULT_CACHE_MAX_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 const CURRENT_LOG_FILE_NAME: &str = "current.log";
+const MAIN_WEBVIEW_SLEEP_RECOVERY_DELAY_MS: u64 = 900;
+const MAIN_WEBVIEW_RECOVERY_RELOAD_GRACE_MS: u64 = 150;
+const MAIN_WEBVIEW_FOCUS_RECOVERY_IDLE_MS: u64 = 60_000;
 
 static APP_LOG_FILE: OnceLock<Mutex<Option<File>>> = OnceLock::new();
 
@@ -95,10 +99,127 @@ struct CacheWriteResult {
     changed: bool,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LocalAudioFile {
+    path: String,
+    title: String,
+    album: Option<String>,
+    duration_sec: Option<u64>,
+}
+
 fn cache_error(message: impl Into<String>) -> CommandError {
     CommandError {
         message: message.into(),
     }
+}
+
+fn local_audio_mime_type(path: &Path) -> &'static str {
+    match path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "mp3" => "audio/mpeg",
+        "m4a" | "mp4" => "audio/mp4",
+        "aac" => "audio/aac",
+        "flac" => "audio/flac",
+        "wav" => "audio/wav",
+        "ogg" | "oga" => "audio/ogg",
+        "opus" => "audio/opus",
+        "webm" => "audio/webm",
+        _ => "application/octet-stream",
+    }
+}
+
+fn is_local_audio_file(path: &Path) -> bool {
+    matches!(
+        path.extension()
+            .and_then(|extension| extension.to_str())
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+            .as_str(),
+        "mp3" | "m4a" | "mp4" | "aac" | "flac" | "wav" | "ogg" | "oga" | "opus" | "webm"
+    )
+}
+
+fn local_audio_title(path: &Path) -> String {
+    path.file_stem()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or("Untitled")
+        .to_string()
+}
+
+fn scan_local_audio_path(path: &Path, files: &mut Vec<LocalAudioFile>) -> Result<(), CommandError> {
+    let metadata = match fs::metadata(path) {
+        Ok(metadata) => metadata,
+        Err(_) => return Ok(()),
+    };
+
+    if metadata.is_file() {
+        if is_local_audio_file(path) {
+            files.push(LocalAudioFile {
+                path: path.to_string_lossy().to_string(),
+                title: local_audio_title(path),
+                album: path
+                    .parent()
+                    .and_then(|parent| parent.file_name())
+                    .and_then(|name| name.to_str())
+                    .map(|name| name.to_string()),
+                duration_sec: None,
+            });
+        }
+        return Ok(());
+    }
+
+    if !metadata.is_dir() {
+        return Ok(());
+    }
+
+    let entries = fs::read_dir(path).map_err(|error| CommandError {
+        message: format!("local audio directory read failed: {error}"),
+    })?;
+
+    for entry in entries.flatten() {
+        scan_local_audio_path(&entry.path(), files)?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn local_audio_scan(paths: Vec<String>) -> Result<Vec<LocalAudioFile>, CommandError> {
+    let mut files = Vec::new();
+    for path in paths {
+        let trimmed_path = path.trim();
+        if trimmed_path.is_empty() {
+            continue;
+        }
+        scan_local_audio_path(Path::new(trimmed_path), &mut files)?;
+    }
+    files.sort_by(|left, right| left.path.to_lowercase().cmp(&right.path.to_lowercase()));
+    files.dedup_by(|left, right| left.path == right.path);
+    Ok(files)
+}
+
+#[tauri::command]
+fn local_audio_read(path: String) -> Result<AudioPayload, CommandError> {
+    let path = PathBuf::from(path);
+    if !path.is_file() || !is_local_audio_file(&path) {
+        return Err(CommandError {
+            message: "local audio file is unavailable.".to_string(),
+        });
+    }
+    let bytes = fs::read(&path).map_err(|error| CommandError {
+        message: format!("local audio read failed: {error}"),
+    })?;
+    Ok(AudioPayload {
+        body_base64: STANDARD.encode(bytes),
+        mime_type: local_audio_mime_type(&path).to_string(),
+    })
 }
 
 fn cache_root(app: &tauri::AppHandle) -> Result<PathBuf, CommandError> {
@@ -331,7 +452,11 @@ fn sanitize_log_url(value: &str) -> String {
             format!(
                 "{}{}",
                 parsed.as_str().trim_end_matches('/'),
-                if value.contains('?') { "?[redacted]" } else { "" }
+                if value.contains('?') {
+                    "?[redacted]"
+                } else {
+                    ""
+                }
             )
         }
         Err(_) => "[redacted-url]".to_string(),
@@ -561,6 +686,34 @@ fn greet(name: &str) -> String {
 fn quit_app(app: tauri::AppHandle) {
     eprintln!("[internal][tauri][info] quit_app invoked");
     app.exit(0);
+}
+
+fn schedule_main_webview_recovery(app: tauri::AppHandle, reason: &'static str) {
+    thread::spawn(move || {
+        thread::sleep(Duration::from_millis(MAIN_WEBVIEW_SLEEP_RECOVERY_DELAY_MS));
+
+        let Some(main) = app.get_webview_window("main") else {
+            eprintln!(
+                "[internal][tauri][warn] main webview recovery skipped reason={} cause=missing_window",
+                reason
+            );
+            return;
+        };
+
+        eprintln!(
+            "[internal][tauri][info] main webview recovery reload reason={}",
+            reason
+        );
+        let _ = app.emit("main-window-recovery-reload", reason);
+        thread::sleep(Duration::from_millis(MAIN_WEBVIEW_RECOVERY_RELOAD_GRACE_MS));
+
+        if let Err(error) = main.reload() {
+            eprintln!(
+                "[internal][tauri][warn] main webview recovery reload failed reason={} error={}",
+                reason, error
+            );
+        }
+    });
 }
 
 #[tauri::command]
@@ -1806,6 +1959,9 @@ fn discord_rpc_update(
     artist: String,
     album: String,
     artwork_url: Option<String>,
+    song_url: Option<String>,
+    artist_url: Option<String>,
+    album_url: Option<String>,
     duration: u64,
     current_time: u64,
     is_playing: bool,
@@ -1815,6 +1971,9 @@ fn discord_rpc_update(
         artist,
         album,
         artwork_url,
+        song_url,
+        artist_url,
+        album_url,
         duration,
         current_time,
         is_playing,
@@ -1870,6 +2029,7 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init());
 
     #[cfg(not(debug_assertions))]
@@ -1889,6 +2049,9 @@ pub fn run() {
     #[cfg(target_os = "macos")]
     let builder = builder.manage(macos_media::MacosMediaSession::new());
 
+    let last_main_focus_lost_at = Arc::new(Mutex::new(None::<Instant>));
+    let window_event_last_main_focus_lost_at = Arc::clone(&last_main_focus_lost_at);
+
     builder
         .setup(|app| {
             if let Err(error) = initialize_app_log(app.handle()) {
@@ -1896,7 +2059,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .on_window_event(|window, event| match event {
+        .on_window_event(move |window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {
                 eprintln!(
                     "[internal][tauri][info] window close requested label={}",
@@ -1909,6 +2072,11 @@ pub fn run() {
             }
             tauri::WindowEvent::Focused(false) => {
                 if window.label() == "main" {
+                    if let Ok(mut last_focus_lost_at) = window_event_last_main_focus_lost_at.lock()
+                    {
+                        *last_focus_lost_at = Some(Instant::now());
+                    }
+
                     let app = window.app_handle().clone();
                     thread::spawn(move || {
                         thread::sleep(Duration::from_millis(100));
@@ -1931,7 +2099,21 @@ pub fn run() {
             }
             tauri::WindowEvent::Focused(true) => {
                 if window.label() == "main" {
-                    let _ = window.app_handle().emit("window-focused", ());
+                    let app = window.app_handle().clone();
+                    let _ = app.emit("window-focused", ());
+
+                    let was_idle_long_enough = window_event_last_main_focus_lost_at
+                        .lock()
+                        .ok()
+                        .and_then(|mut last_focus_lost_at| last_focus_lost_at.take())
+                        .is_some_and(|lost_at| {
+                            lost_at.elapsed()
+                                >= Duration::from_millis(MAIN_WEBVIEW_FOCUS_RECOVERY_IDLE_MS)
+                        });
+
+                    if was_idle_long_enough {
+                        schedule_main_webview_recovery(app, "main-focus-return-after-idle");
+                    }
                 }
             }
             _ => {}
@@ -1959,6 +2141,14 @@ pub fn run() {
             cache_stats,
             cache_set_max_bytes,
             cache_clear,
+            local_audio_scan,
+            local_audio_read,
+            lastfm::lastfm_auth_token,
+            lastfm::lastfm_complete_auth,
+            lastfm::lastfm_disconnect,
+            lastfm::lastfm_get_session,
+            lastfm::lastfm_scrobble,
+            lastfm::lastfm_update_now_playing,
             discord_rpc_update,
             discord_rpc_clear,
             #[cfg(target_os = "macos")]

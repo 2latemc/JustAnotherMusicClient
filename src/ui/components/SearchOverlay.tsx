@@ -81,7 +81,7 @@ export function SearchOverlay({
   onQueryChange,
 }: SearchOverlayProps) {
   const { openTrackMenu } = useTrackContextMenu();
-  const { openPlaylistMenu } = usePlaylistContextMenu();
+  const { openPlaylistMenu, openAlbumMenu } = usePlaylistContextMenu();
   const inputRef = useRef<HTMLInputElement>(null);
   const requestIdRef = useRef(0);
   const modifiersRef = useRef({ primary: false, shift: false });
@@ -361,7 +361,9 @@ export function SearchOverlay({
               ? (event) => openTrackMenu(event, preview.value)
               : preview.type === "playlist"
                 ? (event) => openPlaylistMenu(event, preview.value)
-                : undefined}
+                : preview.type === "album"
+                  ? (event) => openAlbumMenu(event, preview.value)
+                  : undefined}
             onClick={openPreview}
           >
             <TrackArtwork

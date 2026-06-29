@@ -8,9 +8,10 @@ import {
   useRef,
   useState,
 } from "react";
-import { IconBookmark, IconBookmarkOff, IconCheck, IconCopy, IconLoader2 } from "@tabler/icons-react";
+import { IconBookmark, IconBookmarkOff, IconCheck, IconCopy, IconLoader2, IconTrash } from "@tabler/icons-react";
 import type { Album, Playlist } from "../../datasource/types";
 import type { LibraryController } from "../../player/LibraryController";
+import { deleteLocalPlaylist, isLocalPlaylist } from "../../player/localPlaylists";
 import styles from "./PlaylistContextMenu.module.css";
 
 interface PlaylistContextMenuValue {
@@ -116,27 +117,17 @@ export function PlaylistContextMenuProvider({
     setPosition({ x: event.clientX, y: event.clientY });
   };
 
-  const toggleSaved = async () => {
-    if (!playlist || isSaving) return;
-    const saved = libraryController.isPlaylistSaved(playlist.id);
-    setPosition(null);
-    setIsSaving(true);
-    showPersistentToast(saved ? "Removing..." : "Saving...");
-    try {
-      await libraryController.setPlaylistSaved(playlist, !saved);
-      showToast(saved ? "Removed from library" : "Saved to library");
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : "Unable to update this playlist.");
-    } finally {
-      setIsSaving(false);
-    }
-  };
+  const isSaved = album
+    ? libraryController.isAlbumSaved(album.id) || Boolean(album.playlistId && libraryController.isAlbumSaved(album.playlistId))
+    : false;
 
-  const isSaved = playlist
-    ? libraryController.isPlaylistSaved(playlist.id)
-    : album
-      ? libraryController.isAlbumSaved(album.id) || Boolean(album.playlistId && libraryController.isAlbumSaved(album.playlistId))
-      : false;
+  const isLocalPlaylistMenu = playlist ? isLocalPlaylist(playlist) : false;
+  const canCopyPlaylistUrl = Boolean(
+    playlist
+      && !isLocalPlaylistMenu
+      && playlist.kind !== "liked-songs"
+      && playlist.id !== "LM",
+  );
 
   const getAlbumUrl = (album: Album): string => {
     if (album.id.startsWith("UC")) {
@@ -146,6 +137,11 @@ export function PlaylistContextMenuProvider({
       return `https://music.youtube.com/browse/${encodeURIComponent(album.id)}`;
     }
     return `https://music.youtube.com/search?q=${encodeURIComponent(album.title)}`;
+  };
+
+  const getPlaylistUrl = (playlist: Playlist): string => {
+    const playlistId = playlist.id.replace(/^VL/, "");
+    return `https://music.youtube.com/playlist?list=${encodeURIComponent(playlistId)}`;
   };
 
   const toggleAlbumSaved = async () => {
@@ -176,10 +172,28 @@ export function PlaylistContextMenuProvider({
     }
   };
 
+  const copyPlaylistUrl = async () => {
+    if (!playlist || isSaving) return;
+    setPosition(null);
+    try {
+      await navigator.clipboard.writeText(getPlaylistUrl(playlist));
+      showToast("Url copied to clipboard");
+    } catch {
+      showToast("Unable to copy the link.");
+    }
+  };
+
+  const deleteSelectedLocalPlaylist = () => {
+    if (!playlist || !isLocalPlaylist(playlist)) return;
+    deleteLocalPlaylist(playlist.id);
+    setPosition(null);
+    showToast("Local playlist deleted");
+  };
+
   return (
     <PlaylistContext.Provider value={{ openPlaylistMenu, openAlbumMenu }}>
       {children}
-      {position && (playlist || album) && (
+      {position && (album || isLocalPlaylistMenu || canCopyPlaylistUrl) && (
         <div
           ref={menuRef}
           className={styles.menu}
@@ -197,14 +211,36 @@ export function PlaylistContextMenuProvider({
               <span>Copy album URL</span>
             </button>
           )}
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => void (playlist ? toggleSaved() : toggleAlbumSaved())}
-          >
-            {isSaved ? <IconBookmarkOff size={18} /> : <IconBookmark size={18} />}
-            <span>{isSaved ? "Remove from library" : "Save to library"}</span>
-          </button>
+          {canCopyPlaylistUrl && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => void copyPlaylistUrl()}
+            >
+              <IconCopy size={18} />
+              <span>Copy playlist URL</span>
+            </button>
+          )}
+          {isLocalPlaylistMenu && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={deleteSelectedLocalPlaylist}
+            >
+              <IconTrash size={18} />
+              <span>Delete local playlist</span>
+            </button>
+          )}
+          {album && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => void toggleAlbumSaved()}
+            >
+              {isSaved ? <IconBookmarkOff size={18} /> : <IconBookmark size={18} />}
+              <span>{isSaved ? "Remove from library" : "Save to library"}</span>
+            </button>
+          )}
         </div>
       )}
       {toast && (
@@ -215,7 +251,7 @@ export function PlaylistContextMenuProvider({
               size={18}
               aria-hidden="true"
             />
-          ) : (toast.startsWith("Saved ") || toast.startsWith("Removed ") || toast === "Url copied to clipboard") && (
+          ) : (toast.startsWith("Saved ") || toast.startsWith("Removed ") || toast === "Url copied to clipboard" || toast === "Local playlist deleted") && (
             <IconCheck size={18} aria-hidden="true" />
           )}
           <span>{toast}</span>

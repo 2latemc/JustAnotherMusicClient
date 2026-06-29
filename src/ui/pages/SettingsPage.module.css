@@ -248,6 +248,174 @@
   border-bottom: 1px solid var(--color-border);
 }
 
+.localPlaylistsBlock {
+  padding: var(--spacing-lg) 0;
+}
+
+.localPlaylistHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-md);
+}
+
+.localPlaylistCreate,
+.localPathControls {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.localPathInputGroup {
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.localPlaylistCreate input,
+.localPathControls input {
+  width: 190px;
+  height: 40px;
+  min-width: 0;
+  padding: 0 var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  outline: 0;
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: var(--font-size-sm);
+}
+
+.localPathControls input {
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+}
+
+.localPlaylistCreate input:focus,
+.localPathControls input:focus {
+  border-color: var(--color-accent);
+}
+
+.localPathInputGroup:focus-within {
+  border-color: var(--color-accent);
+}
+
+.localPathBrowseButton {
+  width: 38px;
+  height: 100%;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-left: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.localPathBrowseButton:hover {
+  background: var(--color-bg-overlay);
+  color: var(--color-accent);
+}
+
+.localPathBrowseButton:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.localPlaylistList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-md);
+}
+
+.localPlaylistItem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: rgb(0 0 0 / 12%);
+}
+
+.localPlaylistTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+}
+
+.localPlaylistTitle {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  overflow: hidden;
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.localPathList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.localPathItem {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 0 var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.localPathItem span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.localPathItem button {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.localPathItem button:hover {
+  background: var(--color-bg-overlay);
+  color: var(--color-accent);
+}
+
+.localPlaylistEmpty {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
 .shortcutRow {
   display: flex;
   align-items: center;
@@ -491,6 +659,72 @@
   cursor: pointer;
 }
 
+.selectRow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding-top: var(--spacing-lg);
+}
+
+.selectControl {
+  position: relative;
+  min-width: 180px;
+  height: 40px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.selectControl svg {
+  position: absolute;
+  right: 12px;
+  color: var(--color-text-muted);
+  pointer-events: none;
+  transition: color var(--transition-fast);
+}
+
+.selectInput {
+  width: 100%;
+  height: 100%;
+  padding: 0 36px 0 var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  outline: 0;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 5%), rgb(255 255 255 / 1%)),
+    var(--color-bg);
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  appearance: none;
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.selectInput:hover,
+.selectInput:focus-visible {
+  border-color: var(--color-accent);
+  background: var(--color-bg-overlay);
+}
+
+.selectControl:hover svg,
+.selectControl:focus-within svg {
+  color: var(--color-accent);
+}
+
+.selectInput:focus-visible {
+  box-shadow: 0 0 0 2px rgb(255 255 255 / 72%);
+}
+
+.selectInput option {
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+}
+
 .settingActionRow {
   display: flex;
   align-items: center;
@@ -592,7 +826,12 @@
   .settingRow,
   .actionRow,
   .cacheRow,
-  .shortcutRow {
+  .shortcutRow,
+  .selectRow,
+  .localPlaylistHeader,
+  .localPlaylistTitleRow,
+  .localPlaylistCreate,
+  .localPathControls {
     align-items: stretch;
     flex-direction: column;
   }
@@ -612,7 +851,10 @@
   .secondaryButton,
   .dangerButton,
   .githubButton,
-  .shortcutCapture {
+  .shortcutCapture,
+  .selectControl,
+  .localPlaylistCreate input,
+  .localPathInputGroup {
     width: 100%;
   }
 

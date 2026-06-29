@@ -112,9 +112,24 @@
   color: var(--color-text-secondary);
 }
 
+.loadingState {
+  min-height: 96px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+}
+
+.loadingIcon {
+  animation: loadingIconSpin 800ms linear infinite;
+}
+
 .loadMoreStatus {
-  min-height: 32px;
+  min-height: 72px;
   margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: var(--color-text-secondary);
 }
 
@@ -221,9 +236,18 @@
   cursor: pointer;
 }
 
+.trackEntering {
+  animation: trackEnter 360ms var(--easing-smooth) both;
+  animation-delay: var(--track-enter-delay, 0ms);
+}
+
 .track:hover {
   border-radius: var(--radius-md);
   background: var(--color-bg-overlay);
+}
+
+.track svg:last-child {
+  pointer-events: none;
 }
 
 .trackIndex,
@@ -244,6 +268,35 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@keyframes loadingIconSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes trackEnter {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.985);
+  }
+
+  70% {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loadingIcon,
+  .trackEntering {
+    animation: none;
+  }
 }
 
 @media (max-width: 560px) {

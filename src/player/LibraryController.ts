@@ -10,6 +10,13 @@ import type {
   Track,
 } from "../datasource/types";
 import { logInternalError, logInternalInfo } from "../internal/logging";
+import {
+  addLocalTrackToPlaylist,
+  getLocalPlaylistTrackPage,
+  getLocalTracksForPlaylist,
+  isLocalPlaylist,
+  removeLocalTrackFromPlaylist,
+} from "./localPlaylists";
 
 export type LibraryStatus = "restoring" | "signed-out" | "authorizing" | "loading" | "ready" | "error";
 
@@ -273,8 +280,20 @@ export class LibraryController {
   }
 
   async getPlaylistTracks(playlist: Playlist, onUpdate?: (tracks: Track[]) => void): Promise<Track[]> {
-    if (!this.dataSource.getPlaylistTracks) return [];
-    return this.dataSource.getPlaylistTracks(playlist, onUpdate);
+    if (isLocalPlaylist(playlist)) {
+      const page = await getLocalPlaylistTrackPage(playlist);
+      if (page.tracks.length > 0) onUpdate?.(page.tracks);
+      return page.tracks;
+    }
+
+    const localTracks = getLocalTracksForPlaylist(playlist);
+    const mergeLocalTracks = (tracks: Track[]): Track[] => [...tracks, ...localTracks];
+    if (!this.dataSource.getPlaylistTracks) return localTracks;
+    const tracks = await this.dataSource.getPlaylistTracks(
+      playlist,
+      (updatedTracks) => onUpdate?.(mergeLocalTracks(updatedTracks)),
+    );
+    return mergeLocalTracks(tracks);
   }
 
   async getPlaylistTrackPage(
@@ -282,12 +301,30 @@ export class LibraryController {
     pageKey?: string,
     onUpdate?: (page: TrackPage) => void,
   ): Promise<TrackPage> {
-    if (!this.dataSource.getPlaylistTrackPage) {
-      const tracks = pageKey ? [] : await this.getPlaylistTracks(playlist);
-      if (tracks.length > 0) onUpdate?.({ tracks, hasMore: false });
-      return { tracks, hasMore: false };
+    if (isLocalPlaylist(playlist)) {
+      const page = pageKey ? { tracks: [], hasMore: false } : await getLocalPlaylistTrackPage(playlist);
+      if (page.tracks.length > 0) onUpdate?.(page);
+      return page;
     }
-    return this.dataSource.getPlaylistTrackPage(playlist, pageKey, onUpdate);
+
+    const localTracks = pageKey ? [] : getLocalTracksForPlaylist(playlist);
+    const mergeLocalTracks = (page: TrackPage): TrackPage => ({
+      ...page,
+      tracks: [...page.tracks, ...localTracks],
+    });
+
+    if (!this.dataSource.getPlaylistTrackPage) {
+      const tracks = pageKey
+        ? []
+        : await this.dataSource.getPlaylistTracks?.(playlist) ?? [];
+      const page = mergeLocalTracks({ tracks, hasMore: false });
+      if (page.tracks.length > 0) onUpdate?.(page);
+      return page;
+    }
+    const page = await this.dataSource.getPlaylistTrackPage(playlist, pageKey, (updatedPage) => {
+      onUpdate?.(pageKey ? updatedPage : mergeLocalTracks(updatedPage));
+    });
+    return pageKey ? page : mergeLocalTracks(page);
   }
 
   async getRecommendations(seed: Track): Promise<Track[]> {
@@ -298,6 +335,12 @@ export class LibraryController {
     track: Track,
     playlist: Playlist,
   ): Promise<"added" | "already-present"> {
+    if (track.source === "local") {
+      if (isLocalPlaylist(playlist)) {
+        throw new Error("Local songs are already managed from Local Files.");
+      }
+      return addLocalTrackToPlaylist(track, playlist);
+    }
     if (!this.dataSource.addTrackToPlaylist) {
       throw new Error("Adding songs to playlists is unavailable.");
     }
@@ -308,6 +351,10 @@ export class LibraryController {
   }
 
   async removeTrackFromPlaylist(track: Track, playlist: Playlist): Promise<void> {
+    if (track.source === "local" && !isLocalPlaylist(playlist)) {
+      removeLocalTrackFromPlaylist(track, playlist);
+      return;
+    }
     if (!this.dataSource.removeTrackFromPlaylist) {
       logInternalError("LibraryController.removeTrackFromPlaylist unavailable", {
         dataSource: this.dataSource.constructor.name,

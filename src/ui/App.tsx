@@ -24,11 +24,13 @@ import {
   searchController,
   tabManager,
   useLibraryState,
+  usePlayerSession,
   usePlayerState,
 } from "../player/playerStore";
 import styles from "./App.module.css";
 import { clearAppSession, loadAppSession, saveAppSession } from "../player/appSession";
 import { useMediaSession } from "../player/useMediaSession";
+import { LastFmService } from "../player/LastFm";
 import { playerUIStore, usePlayerUIState } from "./stores/playerUIStore";
 import { AppLoadingScreen } from "./components/AppLoadingScreen";
 import { UpdateToast } from "./components/UpdateToast";
@@ -68,6 +70,7 @@ import {
   useKeyboardShortcuts,
   type KeyboardShortcutAction,
 } from "./settings/keyboardShortcuts";
+import { useLastFmScrobblingEnabled } from "./settings/lastfm";
 const restoredSession = loadAppSession();
 const LOADING_SCREEN_FADE_MS = 80;
 const LOADING_SCREEN_MAX_MS = 4000;
@@ -79,6 +82,8 @@ const MOUSE_BACK_BUTTON = 3;
 const MOUSE_FORWARD_BUTTON = 4;
 const MINI_PLAYER_BOTTOM_MARGIN = 24;
 const MAIN_WINDOW_DRAG_BACKGROUND_SUPPRESS_MS = 10000;
+const SLEEP_RECOVERY_TIMER_INTERVAL_MS = 15000;
+const SLEEP_RECOVERY_TIMER_DRIFT_MS = 60000;
 const TAB_SHORTCUT_ACTIONS: KeyboardShortcutAction[] = [
   "tab1",
   "tab2",
@@ -203,9 +208,11 @@ export default function App() {
   useDisableContextMenu();
   const libraryState = useLibraryState();
   const playerState = usePlayerState();
+  const playerSession = usePlayerSession();
   const playerUIState = usePlayerUIState();
   const miniPlayerEnabled = useMiniPlayerEnabled();
   const keyboardShortcuts = useKeyboardShortcuts();
+  const lastFmScrobblingEnabled = useLastFmScrobblingEnabled();
 
   const [tabs, setTabs] = useState<Tab[]>(
     () => restoredSession?.tabs.map(stripNavigationHistory) ?? [{ id: "1", view: "home" }],
@@ -241,12 +248,30 @@ export default function App() {
   const loadingScreenDismissedRef = useRef(false);
   const loadingScreenStartedAtRef = useRef(performance.now());
   const miniPlayerPositionedRef = useRef(false);
+  const miniPlayerEnabledRef = useRef(miniPlayerEnabled);
   const miniPlayerRestoreSuppressUntilRef = useRef(0);
   const mainWindowDragSuppressUntilRef = useRef(0);
   const lastErrorAlertRef = useRef<string | null>(null);
   const sessionStateRef = useRef({ tabs, activeTabId, nextTabId });
   const sessionPersistenceDisabledRef = useRef(false);
+  const sleepRecoveryLastTickRef = useRef(Date.now());
+  const sleepRecoveryReloadingRef = useRef(false);
   sessionStateRef.current = { tabs, activeTabId, nextTabId };
+  miniPlayerEnabledRef.current = miniPlayerEnabled;
+  const persistAppSession = useCallback(() => {
+    if (sessionPersistenceDisabledRef.current) return;
+    const current = sessionStateRef.current;
+    saveAppSession({
+      version: 1,
+      tabs: current.tabs.map((tab) => ({
+        ...stripNavigationHistory(tab),
+        searchLoading: false,
+      })),
+      activeTabId: current.activeTabId,
+      nextTabId: current.nextTabId,
+      player: tabManager.exportSession(),
+    });
+  }, []);
 
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
   const isQueuePanelOpen = activeTab?.isQueueOpen ?? false;
@@ -423,6 +448,27 @@ export default function App() {
   );
 
   useMediaSession(playerState, playerController);
+
+  useEffect(() => {
+    const syncLastFm = () => {
+      LastFmService.updatePlayback({
+        track: playerState.currentTrack,
+        status: playerState.status,
+        currentTime: playerController.getCurrentTime(),
+        duration: playerController.getDuration(),
+        enabled: lastFmScrobblingEnabled,
+      });
+    };
+
+    syncLastFm();
+    const intervalId = window.setInterval(syncLastFm, 1000);
+    return () => window.clearInterval(intervalId);
+  }, [
+    lastFmScrobblingEnabled,
+    playerState.currentTrack,
+    playerState.status,
+  ]);
+
   const activeViewKey = [
     activeTabId,
     activeTab?.view,
@@ -512,29 +558,59 @@ export default function App() {
   }, [dismissLoadingScreen, libraryState.library, libraryState.status, showKeychainNotice]);
 
   useEffect(() => {
-    const persist = () => {
-      if (sessionPersistenceDisabledRef.current) return;
-      const current = sessionStateRef.current;
-      saveAppSession({
-        version: 1,
-        tabs: current.tabs.map((tab) => ({
-          ...stripNavigationHistory(tab),
-          searchLoading: false,
-        })),
-        activeTabId: current.activeTabId,
-        nextTabId: current.nextTabId,
-        player: tabManager.exportSession(),
-      });
-    };
-
-    const intervalId = window.setInterval(persist, 1000);
-    window.addEventListener("beforeunload", persist);
+    const intervalId = window.setInterval(persistAppSession, 1000);
+    window.addEventListener("beforeunload", persistAppSession);
     return () => {
       window.clearInterval(intervalId);
-      window.removeEventListener("beforeunload", persist);
-      persist();
+      window.removeEventListener("beforeunload", persistAppSession);
+      persistAppSession();
     };
-  }, []);
+  }, [persistAppSession]);
+
+  useEffect(() => {
+    persistAppSession();
+  }, [activeTabId, nextTabId, persistAppSession, playerSession, tabs]);
+
+  useEffect(() => {
+    const unlistenPromise = listen("main-window-recovery-reload", persistAppSession);
+    return () => {
+      void unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, [persistAppSession]);
+
+  useEffect(() => {
+    sleepRecoveryLastTickRef.current = Date.now();
+
+    const resetSleepTimerOnVisible = () => {
+      if (document.visibilityState === "visible") {
+        sleepRecoveryLastTickRef.current = Date.now();
+      }
+    };
+    document.addEventListener("visibilitychange", resetSleepTimerOnVisible);
+
+    const intervalId = window.setInterval(() => {
+      const now = Date.now();
+      const elapsed = now - sleepRecoveryLastTickRef.current;
+      sleepRecoveryLastTickRef.current = now;
+
+      if (
+        elapsed < SLEEP_RECOVERY_TIMER_INTERVAL_MS + SLEEP_RECOVERY_TIMER_DRIFT_MS
+        || document.visibilityState === "hidden"
+        || sleepRecoveryReloadingRef.current
+      ) {
+        return;
+      }
+
+      sleepRecoveryReloadingRef.current = true;
+      persistAppSession();
+      window.location.reload();
+    }, SLEEP_RECOVERY_TIMER_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", resetSleepTimerOnVisible);
+    };
+  }, [persistAppSession]);
 
   const handleDeleteAllAppData = useCallback(async () => {
     sessionPersistenceDisabledRef.current = true;
@@ -1012,7 +1088,23 @@ export default function App() {
       nextTabs.splice(adjustedTargetIndex + (insertAfter ? 1 : 0), 0, draggedTab);
       return nextTabs;
     });
+    // Persist immediately so tab order survives app restart
+    window.setTimeout(persistAppSession, 0);
   };
+
+  useEffect(() => {
+    const preventTabFocusTraversal = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+
+      event.preventDefault();
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+    };
+
+    window.addEventListener("keydown", preventTabFocusTraversal);
+    return () => window.removeEventListener("keydown", preventTabFocusTraversal);
+  }, []);
 
   useEffect(() => {
     const isTextEntry = (target: EventTarget | null) => {
@@ -1123,6 +1215,27 @@ export default function App() {
         return;
       }
 
+      if (eventMatchesShortcut(event, keyboardShortcuts.navigateBack)) {
+        if (isSearchOpen && activeTab?.view !== "settings") {
+          event.preventDefault();
+          setIsSearchOpen(false);
+          return;
+        }
+        if (canNavigateBack) {
+          event.preventDefault();
+          handleNavigateBack();
+        }
+        return;
+      }
+
+      if (eventMatchesShortcut(event, keyboardShortcuts.navigateForward)) {
+        if (canNavigateForward) {
+          event.preventDefault();
+          handleNavigateForward();
+        }
+        return;
+      }
+
       if (
         eventMatchesShortcut(event, keyboardShortcuts.playPause)
         && playerState.currentTrack
@@ -1171,6 +1284,10 @@ export default function App() {
   }, [
     activeTab?.view,
     activeTabId,
+    canNavigateBack,
+    canNavigateForward,
+    handleNavigateBack,
+    handleNavigateForward,
     isSearchOpen,
     keyboardShortcuts,
     nextTabId,
@@ -1188,13 +1305,23 @@ export default function App() {
 
 
 useEffect(() => {
+  if (miniPlayerEnabled) return;
+
+  void (async () => {
+    const miniWin = await WebviewWindow.getByLabel("mini-player");
+    if (miniWin) await miniWin.hide();
+  })();
+}, [miniPlayerEnabled]);
+
+
+useEffect(() => {
   const setupListeners = async () => {
     const hideMiniPlayer = async () => {
       const miniWin = await WebviewWindow.getByLabel("mini-player");
       if (miniWin) await miniWin.hide();
     };
 
-    const unlistenBackgrounded = await listen("main-window-backgrounded", async () => {
+    const showMiniPlayerIfAllowed = async () => {
       const miniWin = await WebviewWindow.getByLabel("mini-player");
       if (!miniWin) return;
 
@@ -1208,7 +1335,7 @@ useEffect(() => {
         return;
       }
 
-      if (!miniPlayerEnabled) {
+      if (!miniPlayerEnabledRef.current) {
         await miniWin.hide();
         return;
       }
@@ -1227,7 +1354,25 @@ useEffect(() => {
         } catch (_) {}
       }
       await miniWin.setFocus();
-    });
+    };
+
+    const recoverMissedBackgroundEvent = async () => {
+      const [mainWin, miniWin] = await Promise.all([
+        WebviewWindow.getByLabel("main"),
+        WebviewWindow.getByLabel("mini-player"),
+      ]);
+      if (!mainWin || !miniWin) return;
+
+      const [mainFocused, miniFocused] = await Promise.all([
+        mainWin.isFocused(),
+        miniWin.isFocused(),
+      ]);
+      if (!mainFocused && !miniFocused) {
+        await showMiniPlayerIfAllowed();
+      }
+    };
+
+    const unlistenBackgrounded = await listen("main-window-backgrounded", showMiniPlayerIfAllowed);
 
     const handleMainWindowDragStarted = () => {
       mainWindowDragSuppressUntilRef.current = Date.now() + MAIN_WINDOW_DRAG_BACKGROUND_SUPPRESS_MS;
@@ -1246,9 +1391,10 @@ useEffect(() => {
       },
     );
 
-    if (!miniPlayerEnabled) {
+    if (!miniPlayerEnabledRef.current) {
       await hideMiniPlayer();
     }
+    void recoverMissedBackgroundEvent();
 
     return () => {
       window.removeEventListener("main-window-drag-started", handleMainWindowDragStarted);
@@ -1261,7 +1407,7 @@ useEffect(() => {
 
   const cleanup = setupListeners();
   return () => { cleanup.then(fn => fn?.()); };
-}, [miniPlayerEnabled]);
+}, []);
 
 
 useEffect(() => {
@@ -1318,6 +1464,10 @@ useEffect(() => {
       currentTime: playerController.getCurrentTime(),
       duration: playerController.getDuration(),
     });
+    void emit("player-volume-sync", {
+      muted: playerController.isMuted(),
+      volume: playerController.getVolume(),
+    });
   };
 
   syncTime();
@@ -1339,6 +1489,31 @@ useEffect(() => {
   const cleanup = setup();
   return () => { cleanup.then(fn => fn()); };
 }, []);
+
+useEffect(() => {
+  const setup = async () => {
+    const unlisten = await listen<{ volume: number }>("mini-player:volume", (event) => {
+      const volume = Math.min(1, Math.max(0, event.payload.volume));
+      const shouldBeMuted = volume === 0;
+
+      if (playerController.isMuted() !== shouldBeMuted) {
+        void playerController.toggleMute();
+      }
+
+      void playerController.setVolume(volume);
+    });
+    return unlisten;
+  };
+  const cleanup = setup();
+  return () => { cleanup.then(fn => fn()); };
+}, []);
+
+useEffect(() => {
+  void emit("player-volume-sync", {
+    muted: playerState.muted,
+    volume: playerState.volume,
+  });
+}, [playerState.muted, playerState.volume]);
   return (
     <ArtistNavigationProvider onNavigate={handleNavigateArtist}>
     <TrackContextMenuProvider libraryController={libraryController}>
@@ -1377,6 +1552,10 @@ useEffect(() => {
           onNavigateBack={handleNavigateBack}
           onNavigateForward={handleNavigateForward}
           fullBleedContent={playerUIState.isLyricsOpen}
+          showTransientScrollbar={
+            !playerUIState.isLyricsOpen
+            && (activeTab?.view === "playlist" || activeTab?.view === "album")
+          }
           rightPanelWidth={queuePanelWidth}
           onRightPanelWidthChange={setQueuePanelWidth}
           rightPanel={showQueueMounted ? (

@@ -33,6 +33,7 @@ import {
 } from "../../player/playerStore";
 import { TrackArtwork } from "./TrackArtwork";
 import styles from "./TrackContextMenu.module.css";
+import { isLocalPlaylist } from "../../player/localPlaylists";
 import { ArtistLinks } from "./ArtistLinks";
 
 interface MenuPosition {
@@ -94,13 +95,13 @@ export function TrackContextMenuProvider({
   const playlists = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
     const items = (libraryState.library?.playlists ?? []).filter(
-      (playlist) => playlist.isEditable !== false,
+      (playlist) => playlist.isEditable !== false && (track?.source !== "local" || !isLocalPlaylist(playlist)),
     );
     if (!normalizedQuery) return items;
     return items.filter((playlist) =>
       playlist.title.toLocaleLowerCase().includes(normalizedQuery)
     );
-  }, [libraryState.library?.playlists, query]);
+  }, [libraryState.library?.playlists, query, track?.source]);
 
   useEffect(() => {
     if (!menuPosition) return;
@@ -341,6 +342,7 @@ export function TrackContextMenuProvider({
   };
 
   const toggleTrackLike = async (selectedTrack: Track) => {
+    if (selectedTrack.source === "local") return;
     if (libraryState.status === "signed-out" || !libraryState.library) {
       showToast("Sign in to like");
       return;
@@ -360,12 +362,21 @@ export function TrackContextMenuProvider({
     }
   };
 
-  const selectedTrackIsLiked = track
+  const selectedTrackIsLiked = track && track.source !== "local"
     ? libraryState.library?.likedSongs.some((item) => item.id === track.id) ?? false
     : false;
-  const isLikeMutationPending = track
+  const isLikeMutationPending = track && track.source !== "local"
     ? libraryState.pendingLikeTrackIds.has(track.id)
     : false;
+  const canLikeSelectedTrack = track?.source !== "local";
+  const canCopySelectedTrackLink = track?.source !== "local";
+  const canRemoveSelectedTrackFromPlaylist = Boolean(
+    menuContext?.playlist
+      && menuContext.playlist.isEditable !== false
+      && menuContext.playlist.kind !== "liked-songs"
+      && menuContext.playlist.id !== "LM"
+      && !isLocalPlaylist(menuContext.playlist),
+  );
 
   return (
     <TrackContextMenuContext.Provider value={{ openTrackMenu, toggleTrackLike }}>
@@ -392,32 +403,33 @@ export function TrackContextMenuProvider({
             <span className={styles.menuLabel}>Add to playlist</span>
             <kbd>Ctrl S</kbd>
           </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              if (!track) return;
-              setMenuPosition(null);
-              void toggleTrackLike(track);
-            }}
-          >
-            {selectedTrackIsLiked ? (
-              <IconHeartFilled size={18} aria-hidden="true" />
-            ) : (
-              <IconHeart size={18} aria-hidden="true" />
-            )}
-            <span className={styles.menuLabel}>
-              {selectedTrackIsLiked ? "Remove like" : "Like song"}
-            </span>
-          </button>
-          <button type="button" role="menuitem" onClick={() => void copyLink()}>
-            <IconLink size={18} aria-hidden="true" />
-            <span className={styles.menuLabel}>Copy link</span>
-          </button>
-          {menuContext?.playlist
-            && menuContext.playlist.isEditable !== false
-            && menuContext.playlist.kind !== "liked-songs"
-            && menuContext.playlist.id !== "LM" && (
+          {canLikeSelectedTrack && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                if (!track) return;
+                setMenuPosition(null);
+                void toggleTrackLike(track);
+              }}
+            >
+              {selectedTrackIsLiked ? (
+                <IconHeartFilled size={18} aria-hidden="true" />
+              ) : (
+                <IconHeart size={18} aria-hidden="true" />
+              )}
+              <span className={styles.menuLabel}>
+                {selectedTrackIsLiked ? "Remove like" : "Like song"}
+              </span>
+            </button>
+          )}
+          {canCopySelectedTrackLink && (
+            <button type="button" role="menuitem" onClick={() => void copyLink()}>
+              <IconLink size={18} aria-hidden="true" />
+              <span className={styles.menuLabel}>Copy link</span>
+            </button>
+          )}
+          {canRemoveSelectedTrackFromPlaylist && (
             <button
               type="button"
               role="menuitem"

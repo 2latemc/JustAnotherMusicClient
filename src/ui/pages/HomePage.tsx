@@ -22,6 +22,7 @@ const FALLBACK_QUERIES = [
 
 const suggestionCache = new Map<string, Track[]>();
 const suggestionLoads = new Map<string, Promise<Track[]>>();
+const EMPTY_TRACKS: Track[] = [];
 
 interface HomePageProps {
   tabId: string;
@@ -62,11 +63,30 @@ export function HomePage({
   );
   const [isSurpriseSpinning, setIsSurpriseSpinning] = useState(false);
   const loadIdRef = useRef(0);
-  const recentlyPlayed = libraryState.library?.recentlyPlayed ?? [];
+  const recentlyPlayed = useMemo(
+    () => libraryState.library?.recentlyPlayed ?? EMPTY_TRACKS,
+    [libraryState.library],
+  );
   const recentTrackKey = recentlyPlayed.map((track) => track.id).join(":");
+  const isWaitingForLibrary = !libraryState.library
+    && (
+      libraryState.status === "restoring"
+      || libraryState.status === "loading"
+      || libraryState.status === "authorizing"
+    );
+  const suggestionCacheKey = recentlyPlayed.length > 0
+    ? `${tabId}:recent:${recentTrackKey}`
+    : `${tabId}:${libraryState.status}:empty`;
 
   useEffect(() => {
-    const cached = suggestionCache.get(tabId);
+    if (isWaitingForLibrary) {
+      loadIdRef.current += 1;
+      setSuggestions([]);
+      setIsLoadingSuggestions(true);
+      return;
+    }
+
+    const cached = suggestionCache.get(suggestionCacheKey);
     if (cached) {
       setSuggestions(cached);
       setIsLoadingSuggestions(false);
@@ -74,43 +94,51 @@ export function HomePage({
     }
 
     const loadId = ++loadIdRef.current;
-    let loadPromise = suggestionLoads.get(tabId);
+    setIsLoadingSuggestions(true);
+
+    let loadPromise = suggestionLoads.get(suggestionCacheKey);
     if (!loadPromise) {
       loadPromise = (async () => {
-      const seeds = shuffle(recentlyPlayed).slice(0, 3);
-      let loaded: Track[] = [];
+        const seeds = shuffle(recentlyPlayed).slice(0, 3);
+        let loaded: Track[] = [];
 
-      if (seeds.length > 0) {
-        const recommendationSets = await Promise.allSettled(
-          seeds.map((seed) => libraryController.getRecommendations(seed)),
-        );
-        loaded = recommendationSets.flatMap((result) =>
-          result.status === "fulfilled" ? result.value : []
-        );
-      }
-
-      if (loaded.length < 12) {
-        const query = FALLBACK_QUERIES[Math.floor(Math.random() * FALLBACK_QUERIES.length)];
-        try {
-          loaded.push(...await searchController.searchTracks(query));
-        } catch {
-          // Recent tracks still provide a useful offline fallback.
+        if (seeds.length > 0) {
+          const recommendationSets = await Promise.allSettled(
+            seeds.map((seed) => libraryController.getRecommendations(seed)),
+          );
+          loaded = recommendationSets.flatMap((result) =>
+            result.status === "fulfilled" ? result.value : []
+          );
         }
-      }
+
+        if (loaded.length < 12) {
+          const query = FALLBACK_QUERIES[Math.floor(Math.random() * FALLBACK_QUERIES.length)];
+          try {
+            loaded.push(...await searchController.searchTracks(query));
+          } catch {
+            // Recent tracks still provide a useful offline fallback.
+          }
+        }
 
         return shuffle(uniqueTracks([...loaded, ...recentlyPlayed])).slice(0, 36);
       })();
-      suggestionLoads.set(tabId, loadPromise);
+      suggestionLoads.set(suggestionCacheKey, loadPromise);
     }
 
     void loadPromise.then((loadedSuggestions) => {
-      suggestionCache.set(tabId, loadedSuggestions);
-      suggestionLoads.delete(tabId);
+      suggestionCache.set(suggestionCacheKey, loadedSuggestions);
+      suggestionLoads.delete(suggestionCacheKey);
       if (loadId !== loadIdRef.current) return;
       setSuggestions(loadedSuggestions);
       setIsLoadingSuggestions(false);
     });
-  }, [libraryController, recentTrackKey, searchController, tabId]);
+  }, [
+    isWaitingForLibrary,
+    libraryController,
+    recentlyPlayed,
+    searchController,
+    suggestionCacheKey,
+  ]);
 
   const compactRecent = useMemo(() => recentlyPlayed.slice(0, 6), [recentTrackKey]);
   const largeRecent = useMemo(() => recentlyPlayed.slice(6), [recentTrackKey]);

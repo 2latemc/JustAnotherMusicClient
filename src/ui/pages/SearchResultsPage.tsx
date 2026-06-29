@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { IconPlayerPlay } from "@tabler/icons-react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { IconLoader2, IconPlayerPlay } from "@tabler/icons-react";
 import type {
   Album,
   Artist,
@@ -44,6 +44,14 @@ function buildFlatItems(results: SearchResults, songsFirst: boolean): Selectable
   return items;
 }
 
+function SearchLoadingSpinner() {
+  return (
+    <div className={styles.loadingState} role="status" aria-live="polite" aria-label="Searching">
+      <IconLoader2 className={styles.loadingIcon} size={30} aria-hidden="true" />
+    </div>
+  );
+}
+
 export function SearchResultsPage({
   query,
   results,
@@ -64,7 +72,7 @@ export function SearchResultsPage({
   onOpenPlaylist: (playlist: Playlist) => void;
 }) {
   const { openTrackMenu } = useTrackContextMenu();
-  const { openPlaylistMenu } = usePlaylistContextMenu();
+  const { openPlaylistMenu, openAlbumMenu } = usePlaylistContextMenu();
   const hasResults = results.artists.length
     + results.tracks.length
     + results.albums.length
@@ -194,6 +202,10 @@ export function SearchResultsPage({
     [isKeyboardNav, selectedIndex],
   );
 
+  const enterStyle = useCallback((index: number) => ({
+    "--search-enter-delay": `${Math.min(Math.max(index, 0), 18) * 28}ms`,
+  } as CSSProperties), []);
+
   return (
     <div className={styles.root}>
       <header>
@@ -202,7 +214,7 @@ export function SearchResultsPage({
       </header>
 
       {isLoading ? (
-        <p className={styles.empty}>Searching...</p>
+        <SearchLoadingSpinner />
       ) : !hasResults ? (
         <p className={styles.empty}>No results found.</p>
       ) : (
@@ -220,7 +232,8 @@ export function SearchResultsPage({
                       key={artist.id}
                       type="button"
                       data-selectable-index={index}
-                      className={`${styles.artistCard} ${selected(index)}`}
+                      className={`${styles.artistCard} ${styles.resultEntering} ${selected(index)}`}
+                      style={enterStyle(index)}
                       onClick={() => onOpenArtist(artist)}
                       onMouseEnter={() => handleMouseEnter(index)}
                     >
@@ -252,7 +265,8 @@ export function SearchResultsPage({
                       key={track.id}
                       type="button"
                       data-selectable-index={index}
-                      className={`${styles.track} ${selected(index)}`}
+                      className={`${styles.track} ${styles.resultEntering} ${selected(index)}`}
+                      style={enterStyle(index)}
                       onContextMenu={(event) => openTrackMenu(event, track)}
                       onClick={() => playTrack(track)}
                       onMouseEnter={() => handleMouseEnter(index)}
@@ -287,7 +301,8 @@ export function SearchResultsPage({
                     <div
                       key={album.id}
                       data-selectable-index={index}
-                      className={selectedAlbumCard(index)}
+                      className={`${styles.resultEntering} ${selectedAlbumCard(index)}`}
+                      style={enterStyle(index)}
                       onMouseEnter={() => handleMouseEnter(index)}
                     >
                       <AlbumCard
@@ -297,6 +312,7 @@ export function SearchResultsPage({
                           <ArtistLinks artists={album.artists} fallback={album.artist} />
                         )}
                         onClick={() => onOpenAlbum(album)}
+                        onContextMenu={(event) => openAlbumMenu(event, album)}
                       />
                     </div>
                   );
@@ -317,7 +333,8 @@ export function SearchResultsPage({
                     <div
                       key={playlist.id}
                       data-selectable-index={index}
-                      className={selectedAlbumCard(index)}
+                      className={`${styles.resultEntering} ${selectedAlbumCard(index)}`}
+                      style={enterStyle(index)}
                       onMouseEnter={() => handleMouseEnter(index)}
                     >
                       <AlbumCard

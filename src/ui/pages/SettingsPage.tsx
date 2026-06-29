@@ -1,8 +1,13 @@
-import { type CSSProperties, type KeyboardEvent, useEffect, useState } from "react";
+import { type CSSProperties, type KeyboardEvent, useEffect, useState, useSyncExternalStore } from "react";
 import {
+  IconBrandLastfm,
   IconBug,
+  IconChevronDown,
   IconCoffee,
   IconFileDescription,
+  IconFolder,
+  IconFolderPlus,
+  IconFolderOpen,
   IconLayoutSidebarRight,
   IconLogin,
   IconLogout,
@@ -12,6 +17,7 @@ import {
   IconUser,
 } from "@tabler/icons-react";
 import { invoke } from "@tauri-apps/api/core";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import {
@@ -48,7 +54,10 @@ import {
 import {
   resetMiniPlayerPosition,
   setMiniPlayerEnabled,
+  setMiniPlayerHoverAction,
   useMiniPlayerEnabled,
+  useMiniPlayerHoverAction,
+  type MiniPlayerHoverAction,
 } from "../settings/miniPlayer";
 import {
   captureKeyboardShortcut,
@@ -60,6 +69,19 @@ import {
   useKeyboardShortcuts,
   type KeyboardShortcutAction,
 } from "../settings/keyboardShortcuts";
+import {
+  addLocalPlaylistPath,
+  createLocalPlaylist,
+  deleteLocalPlaylist,
+  getLocalPlaylists,
+  removeLocalPlaylistPath,
+  subscribeToLocalPlaylists,
+} from "../../player/localPlaylists";
+import { LastFmService, type LastFmAuthStart, type LastFmSessionStatus } from "../../player/LastFm";
+import {
+  setLastFmScrobblingEnabled,
+  useLastFmScrobblingEnabled,
+} from "../settings/lastfm";
 import styles from "./SettingsPage.module.css";
 
 const GITHUB_REPOSITORY_URL = "https://github.com/2latemc/JustAnotherMusicClient";
@@ -110,14 +132,29 @@ export function SettingsPage({
   const [resetSettingsConfirming, setResetSettingsConfirming] = useState(false);
   const [resetSettingsBusy, setResetSettingsBusy] = useState(false);
   const [resetSettingsError, setResetSettingsError] = useState<string | null>(null);
+  const [localPlaylistName, setLocalPlaylistName] = useState("");
+  const [localPlaylistPathInputs, setLocalPlaylistPathInputs] = useState<Record<string, string>>({});
+  const [localPlaylistError, setLocalPlaylistError] = useState<string | null>(null);
+  const [localPlaylistBrowsingId, setLocalPlaylistBrowsingId] = useState<string | null>(null);
+  const [lastFmSession, setLastFmSession] = useState<LastFmSessionStatus | null>(null);
+  const [lastFmAuth, setLastFmAuth] = useState<LastFmAuthStart | null>(null);
+  const [lastFmBusy, setLastFmBusy] = useState(false);
+  const [lastFmError, setLastFmError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<SettingsTab>("about");
   const [listeningShortcut, setListeningShortcut] = useState<KeyboardShortcutAction | null>(null);
   const keyboardShortcuts = useKeyboardShortcuts();
   const paperPcMode = usePaperPcMode();
   const miniPlayerEnabled = useMiniPlayerEnabled();
+  const miniPlayerHoverAction = useMiniPlayerHoverAction();
   const extraPlayerControlsAlwaysVisible = useExtraPlayerControlsAlwaysVisible();
   const windowsStyleWindowControls = useWindowsStyleWindowControls();
   const nativeWindowControls = useNativeWindowControls();
+  const lastFmScrobblingEnabled = useLastFmScrobblingEnabled();
+  const localPlaylists = useSyncExternalStore(
+    subscribeToLocalPlaylists,
+    getLocalPlaylists,
+    getLocalPlaylists,
+  );
   const account = libraryState.library?.account;
   const isSignedIn = libraryState.status === "ready" && account;
   const activeTabIndex = Math.max(0, SETTINGS_TABS.findIndex((tab) => tab.id === activeTab));
@@ -149,6 +186,22 @@ export function SettingsPage({
       })
       .catch(() => {
         if (active) setInstalledVersion("Unknown");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void LastFmService.getSession()
+      .then((session) => {
+        if (active) setLastFmSession(session);
+      })
+      .catch((error) => {
+        if (active) {
+          setLastFmError(error instanceof Error ? error.message : "Unable to load Last.fm connection.");
+        }
       });
     return () => {
       active = false;
@@ -286,6 +339,92 @@ export function SettingsPage({
       setResetSettingsError("Unable to delete all app data.");
       setResetSettingsBusy(false);
       setResetSettingsConfirming(false);
+    }
+  };
+
+  const handleCreateLocalPlaylist = () => {
+    setLocalPlaylistError(null);
+    try {
+      createLocalPlaylist(localPlaylistName);
+      setLocalPlaylistName("");
+    } catch (error) {
+      setLocalPlaylistError(error instanceof Error ? error.message : "Unable to create local playlist.");
+    }
+  };
+
+  const handleStartLastFmAuth = async () => {
+    setLastFmBusy(true);
+    setLastFmError(null);
+    try {
+      const auth = await LastFmService.startAuth();
+      setLastFmAuth(auth);
+    } catch (error) {
+      setLastFmError(error instanceof Error ? error.message : "Unable to start Last.fm sign-in.");
+    } finally {
+      setLastFmBusy(false);
+    }
+  };
+
+  const handleFinishLastFmAuth = async () => {
+    if (!lastFmAuth) return;
+    setLastFmBusy(true);
+    setLastFmError(null);
+    try {
+      const session = await LastFmService.completeAuth(lastFmAuth.token);
+      setLastFmSession(session);
+      setLastFmAuth(null);
+      setLastFmScrobblingEnabled(true);
+    } catch (error) {
+      setLastFmError(error instanceof Error ? error.message : "Unable to finish Last.fm sign-in.");
+    } finally {
+      setLastFmBusy(false);
+    }
+  };
+
+  const handleDisconnectLastFm = async () => {
+    setLastFmBusy(true);
+    setLastFmError(null);
+    try {
+      await LastFmService.disconnect();
+      setLastFmSession(null);
+      setLastFmAuth(null);
+    } catch (error) {
+      setLastFmError(error instanceof Error ? error.message : "Unable to disconnect Last.fm.");
+    } finally {
+      setLastFmBusy(false);
+    }
+  };
+
+  const handleAddLocalPlaylistPath = (playlistId: string) => {
+    setLocalPlaylistError(null);
+    const path = localPlaylistPathInputs[playlistId]?.trim() ?? "";
+    if (!path) {
+      setLocalPlaylistError("Enter a folder path before adding it.");
+      return;
+    }
+    addLocalPlaylistPath(playlistId, path);
+    setLocalPlaylistPathInputs((current) => ({ ...current, [playlistId]: "" }));
+  };
+
+  const handleBrowseLocalPlaylistPath = async (playlistId: string) => {
+    setLocalPlaylistError(null);
+    setLocalPlaylistBrowsingId(playlistId);
+    try {
+      const selected = await openDialog({
+        directory: true,
+        multiple: false,
+        title: "Choose music folder",
+      });
+      if (typeof selected !== "string") return;
+      addLocalPlaylistPath(playlistId, selected);
+      setLocalPlaylistPathInputs((current) => ({
+        ...current,
+        [playlistId]: "",
+      }));
+    } catch {
+      setLocalPlaylistError("Unable to open the folder picker.");
+    } finally {
+      setLocalPlaylistBrowsingId(null);
     }
   };
 
@@ -451,6 +590,8 @@ export function SettingsPage({
             {libraryState.error && <p className={styles.error}>{libraryState.error}</p>}
           </section>
 
+         
+
           <section className={styles.card} aria-labelledby="about-settings-title">
             <div className={styles.compactHeader}>
               <h2 id="about-settings-title">About</h2>
@@ -557,6 +698,114 @@ export function SettingsPage({
               </label>
 
               {autostartError && <p className={styles.error}>{autostartError}</p>}
+
+              <div className={styles.localPlaylistsBlock}>
+                <div className={styles.localPlaylistHeader}>
+                  <span className={styles.toggleDescription}>
+                    <strong>Local playlists</strong>
+                    <span>Create playlists from folders on this computer.</span>
+                  </span>
+                  <div className={styles.localPlaylistCreate}>
+                    <input
+                      type="text"
+                      value={localPlaylistName}
+                      placeholder="Playlist name"
+                      aria-label="Local playlist name"
+                      onChange={(event) => setLocalPlaylistName(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") handleCreateLocalPlaylist();
+                      }}
+                    />
+                    <button
+                      className={styles.secondaryButton}
+                      type="button"
+                      onClick={handleCreateLocalPlaylist}
+                    >
+                      <IconFolderPlus size={18} />
+                      Create local playlist
+                    </button>
+                  </div>
+                </div>
+
+                {localPlaylistError && <p className={styles.error}>{localPlaylistError}</p>}
+
+                {localPlaylists.length > 0 && (
+                  <div className={styles.localPlaylistList}>
+                    {localPlaylists.map((playlist) => (
+                      <div className={styles.localPlaylistItem} key={playlist.id}>
+                        <div className={styles.localPlaylistTitleRow}>
+                          <span className={styles.localPlaylistTitle}>
+                            <IconFolder size={18} aria-hidden="true" />
+                            {playlist.name}
+                          </span>
+                          <button
+                            className={styles.dangerButton}
+                            type="button"
+                            onClick={() => deleteLocalPlaylist(playlist.id)}
+                          >
+                            <IconTrash size={18} />
+                            Delete
+                          </button>
+                        </div>
+
+                        <div className={styles.localPathControls}>
+                          <span className={styles.localPathInputGroup}>
+                            <input
+                              type="text"
+                              value={localPlaylistPathInputs[playlist.id] ?? ""}
+                              placeholder="/Users/name/Music"
+                              aria-label={`Folder path for ${playlist.name}`}
+                              onChange={(event) => setLocalPlaylistPathInputs((current) => ({
+                                ...current,
+                                [playlist.id]: event.target.value,
+                              }))}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") handleAddLocalPlaylistPath(playlist.id);
+                              }}
+                            />
+                            <button
+                              type="button"
+                              className={styles.localPathBrowseButton}
+                              disabled={localPlaylistBrowsingId === playlist.id}
+                              title="Browse for folder"
+                              aria-label={`Browse for a folder for ${playlist.name}`}
+                              onClick={() => void handleBrowseLocalPlaylistPath(playlist.id)}
+                            >
+                              <IconFolderOpen size={17} aria-hidden="true" />
+                            </button>
+                          </span>
+                          <button
+                            className={styles.secondaryButton}
+                            type="button"
+                            onClick={() => handleAddLocalPlaylistPath(playlist.id)}
+                          >
+                            Add
+                          </button>
+                        </div>
+
+                        {playlist.paths.length > 0 ? (
+                          <div className={styles.localPathList}>
+                            {playlist.paths.map((path) => (
+                              <div className={styles.localPathItem} key={path}>
+                                <span>{path}</span>
+                                <button
+                                  type="button"
+                                  aria-label={`Remove ${path}`}
+                                  onClick={() => removeLocalPlaylistPath(playlist.id, path)}
+                                >
+                                  <IconTrash size={16} aria-hidden="true" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className={styles.localPlaylistEmpty}>No paths added yet.</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
 
               <div className={styles.actionRow}>
                 <span className={styles.toggleDescription}>
@@ -758,6 +1007,26 @@ export function SettingsPage({
                 onChange={(event) => setMiniPlayerEnabled(event.target.checked)}
               />
               <span className={styles.toggle} aria-hidden="true" />
+            </label>
+
+            <label className={styles.selectRow}>
+              <span className={styles.toggleDescription}>
+                <strong>Mini player hover bar</strong>
+                <span>Choose what the expanded hover slider controls.</span>
+              </span>
+              <span className={styles.selectControl}>
+                <select
+                  className={styles.selectInput}
+                  value={miniPlayerHoverAction}
+                  onChange={(event) => {
+                    setMiniPlayerHoverAction(event.target.value as MiniPlayerHoverAction);
+                  }}
+                >
+                  <option value="seek">Song position</option>
+                  <option value="volume">Volume</option>
+                </select>
+                <IconChevronDown size={17} aria-hidden="true" />
+              </span>
             </label>
 
             <div className={styles.settingActionRow}>
