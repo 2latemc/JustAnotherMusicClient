@@ -8,7 +8,7 @@
 .controlButton {
   background: transparent;
   border: none;
-  color: #ffffff;
+  color: var(--color-text-primary);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -20,7 +20,7 @@
 }
 
 .controlButton:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--color-control-hover);
 }
 
 .controlButton:active:not(:disabled) {
@@ -33,19 +33,19 @@
 }
 
 .controlButton:focus-visible {
-  outline: 2px solid #ffffff;
+  outline: 2px solid var(--color-text-primary);
   outline-offset: 2px;
 }
 
 .playPauseButton {
   width: 40px;
   height: 40px;
-  background: #ffffff;
-  color: #000000;
+  background: var(--color-slider-thumb);
+  color: var(--color-text-inverted);
 }
 
 .playPauseButton:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.9);
+  background: var(--color-text-secondary);
 }
 
 .playPauseButton:disabled {

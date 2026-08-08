@@ -20,7 +20,7 @@
   place-items: center;
   overflow: hidden;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--color-bg-overlay);
 }
 
 .portrait img {
@@ -72,7 +72,7 @@
 
 .artistTitleButton:hover,
 .artistTitleButton:focus-visible {
-  color: #fff;
+  color: var(--color-text-primary);
   filter: drop-shadow(0 0 14px rgb(255 0 51 / 34%));
   text-shadow:
     0 0 14px rgb(255 0 51 / 44%),
@@ -94,7 +94,7 @@
 .headerText p,
 .eyebrow,
 .message {
-  color: rgba(255, 255, 255, 0.64);
+  color: var(--color-text-secondary);
 }
 
 .eyebrow {
@@ -135,15 +135,15 @@
 .subscribeButton {
   border-color: var(--color-accent);
   background: var(--color-accent);
-  color: var(--color-text-primary);
+  color: var(--color-text-on-accent);
   box-shadow: 0 8px 20px rgb(255 0 51 / 18%);
 }
 
 .shuffleButton {
-  border: 1px solid rgb(255 255 255 / 14%);
-  background: rgb(255 255 255 / 10%);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-muted);
   color: var(--color-text-primary);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 10%);
+  box-shadow: inset 0 1px 0 var(--color-border);
 }
 
 .subscribeButton:hover:not(:disabled),
@@ -156,10 +156,10 @@
 
 .shuffleButton:hover:not(:disabled),
 .shuffleButton:focus-visible:not(:disabled) {
-  border-color: rgb(255 255 255 / 24%);
-  background: rgb(255 255 255 / 16%);
+  border-color: var(--color-border-strong);
+  background: var(--color-control-hover);
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 14%),
+    inset 0 1px 0 var(--color-border),
     0 10px 24px rgb(0 0 0 / 24%);
 }
 
@@ -226,7 +226,7 @@
 .index,
 .views,
 .trackText > span {
-  color: rgba(255, 255, 255, 0.58);
+  color: var(--color-text-secondary);
 }
 
 .trackArtwork {
@@ -260,9 +260,9 @@
   grid-auto-flow: column;
   grid-auto-columns: minmax(72px, 1fr);
   padding: 2px;
-  border: 1px solid rgb(255 255 255 / 6%);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-full);
-  background: rgb(0 0 0 / 18%);
+  background: var(--color-bg-muted);
   box-shadow: inset 0 1px 2px rgb(0 0 0 / 18%);
 }
 
@@ -298,7 +298,7 @@
   border: 0;
   border-radius: var(--radius-full);
   background: transparent;
-  color: #858585;
+  color: var(--color-text-secondary);
   cursor: pointer;
   font: inherit;
   font-size: var(--font-size-sm);
@@ -310,12 +310,12 @@
 }
 
 .filters button:hover {
-  color: #d5d5d5;
-  background: rgb(255 255 255 / 4%);
+  color: var(--color-text-primary);
+  background: var(--color-control-hover);
 }
 
 .filters .activeFilter {
-  color: #fff;
+  color: var(--color-text-on-accent);
 }
 
 .filters .activeFilter:hover {

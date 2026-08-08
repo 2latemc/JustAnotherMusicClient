@@ -22,6 +22,8 @@ import { usePlaylistContextMenu } from "../components/PlaylistContextMenu";
 import { TrackArtwork } from "../components/TrackArtwork";
 import { useKeyboardShortcuts } from "../settings/keyboardShortcuts";
 import { shouldStartPageSearch } from "./pageSearchKeyboard";
+import { PlaylistDownloadButton } from "../components/PlaylistDownloadButton";
+import { DownloaderStatusBadge } from "../components/DownloaderStatusBadge";
 
 interface PlaylistViewProps {
   playlist?: Playlist;
@@ -387,6 +389,32 @@ export function PlaylistView({ playlist, playerController, libraryController }: 
     setSortDirection(nextSort === "dateAdded" ? "desc" : "asc");
   };
 
+  const loadEntirePlaylistForDownload = async (): Promise<Track[]> => {
+    if (!playlist) return tracks;
+    let collected = tracks;
+    let pageKey = nextPageKey;
+    let more = hasMoreTracks;
+    const seen = new Set(collected.map((track) => track.id));
+
+    for (let page = 0; more && pageKey && page < 100; page += 1) {
+      const result = await libraryController.getPlaylistTrackPage(playlist, pageKey);
+      const fresh = result.tracks.filter((track) => {
+        if (seen.has(track.id)) return false;
+        seen.add(track.id);
+        return true;
+      });
+      if (fresh.length === 0 && result.nextPageKey === pageKey) break;
+      if (fresh.length > 0) collected = [...collected, ...fresh];
+      more = result.hasMore;
+      pageKey = result.nextPageKey;
+    }
+
+    setTracks(collected);
+    setHasMoreTracks(more);
+    setNextPageKey(pageKey);
+    return collected;
+  };
+
   const handlePlaylistSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key !== "Backspace" || playlistSearchQuery) return;
     event.preventDefault();
@@ -427,15 +455,23 @@ export function PlaylistView({ playlist, playerController, libraryController }: 
           <h1 className={styles.title}>{playlist.title}</h1>
           <p className={styles.artist}>{playlist.owner}</p>
         </div>
-        <button
-          className={styles.shuffleButton}
-          type="button"
-          disabled={isLoading || Boolean(error) || tracks.length === 0}
-          onClick={() => void playShuffled()}
-        >
-          <IconArrowsShuffle size={18} aria-hidden="true" />
-          <span>Shuffle</span>
-        </button>
+        <div className={styles.headerActions}>
+          <PlaylistDownloadButton
+            playlist={playlist}
+            tracks={tracks}
+            disabled={isLoading || Boolean(error) || tracks.length === 0}
+            onBeforeStart={loadEntirePlaylistForDownload}
+          />
+          <button
+            className={styles.shuffleButton}
+            type="button"
+            disabled={isLoading || Boolean(error) || tracks.length === 0}
+            onClick={() => void playShuffled()}
+          >
+            <IconArrowsShuffle size={18} aria-hidden="true" />
+            <span>Shuffle</span>
+          </button>
+        </div>
       </header>
       {isLoading && <PlaylistLoadingSpinner label="Loading songs" />}
       {error && <p className={styles.message}>{error}</p>}
@@ -588,6 +624,7 @@ export function PlaylistView({ playlist, playerController, libraryController }: 
                       fallback={track.artist}
                     />
                   </span>
+                  <DownloaderStatusBadge track={track} />
                   <IconPlayerPlay size={18} />
                 </button>
               );

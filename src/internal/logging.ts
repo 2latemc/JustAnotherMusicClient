@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 type LogLevel = "debug" | "info" | "warn" | "error";
 
+const DEBUG_LOG_STORAGE_KEY = "yt-music-dock:debug-logs";
 const sessionId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 let sequence = 0;
 
@@ -114,7 +115,18 @@ function normalizeError(error: unknown): Record<string, unknown> | unknown {
   return error;
 }
 
+function isDebugLoggingEnabled(): boolean {
+  if (import.meta.env.DEV) return true;
+  try {
+    return localStorage.getItem(DEBUG_LOG_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
 function writeInternalLog(level: LogLevel, context: string, extra?: Record<string, unknown>) {
+  if (level === "debug" && !isDebugLoggingEnabled()) return;
+
   sequence += 1;
   const payload = {
     timestamp: new Date().toISOString(),

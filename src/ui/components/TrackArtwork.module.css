@@ -5,6 +5,7 @@
   justify-content: center;
   overflow: hidden;
   color: var(--color-text-muted);
+  background: var(--color-bg-overlay);
 }
 
 .root img {
@@ -28,6 +29,18 @@
 
 .fallbackIconHidden {
   opacity: 0;
+}
+
+:global(html[data-app-theme="light"]) .root {
+  color: var(--color-text-secondary);
+  background:
+    linear-gradient(180deg, var(--color-bg-elevated), var(--color-bg-overlay)),
+    var(--color-bg-overlay);
+  box-shadow: inset 0 0 0 1px var(--color-border);
+}
+
+:global(html[data-app-theme="light"]) .fallbackIcon {
+  opacity: 0.9;
 }
 
 @media (prefers-reduced-motion: reduce) {

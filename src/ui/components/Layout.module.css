@@ -6,30 +6,47 @@
   position: relative;
   isolation: isolate;
   background:
-    radial-gradient(circle at 72% 18%, rgb(255 255 255 / 4%), transparent 27%),
-    radial-gradient(circle at 24% 82%, rgb(255 255 255 / 2.5%), transparent 30%),
-    #020202;
+    radial-gradient(circle at 72% 18%, var(--color-bg-subtle), transparent 27%),
+    radial-gradient(circle at 24% 82%, var(--color-bg-subtle), transparent 30%),
+    var(--color-app-backdrop);
 
     
 }
 
 :global(html[data-paper-pc]) .layout {
-  background: #020202;
+  background: var(--color-app-backdrop);
 }
 
 .starField {
   position: absolute;
   inset: 0;
-  z-index: -1;
+  z-index: 0;
   overflow: hidden;
   pointer-events: none;
+}
+
+:global(html[data-app-theme="light"]) .starField,
+:global(html[data-app-theme="matrix"]) .starField {
+  display: none;
+}
+
+.themeBackdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.themeRainColumn {
+  display: none;
 }
 
 .starField::after {
   content: "";
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse at center, transparent 35%, rgb(0 0 0 / 48%) 100%);
+  background: radial-gradient(ellipse at center, transparent 35%, var(--color-backdrop-vignette) 100%);
 }
 
 .twinkleStar {
@@ -91,6 +108,7 @@
   flex: 1;
   overflow: hidden;
   position: relative;
+  z-index: 1;
   background: transparent;
   
 }
@@ -190,7 +208,7 @@
   min-height: 34px;
   border-radius: var(--radius-full);
   cursor: grab;
-  background: rgb(255 255 255 / 28%);
+  background: var(--color-border-strong);
   transition:
     width 160ms ease,
     background 160ms ease;
@@ -200,7 +218,7 @@
 .transientScrollbarThumbActive {
   width: 5px;
   cursor: grabbing;
-  background: rgb(255 255 255 / 42%);
+  background: var(--color-text-muted);
 }
 
 .fullBleedContent {
@@ -283,13 +301,3 @@
   }
 }
 
-.expandedContainer{
-  position: absolute;
-  border: 2px solid red;
-  width:100%;
-  height:100%;
-  background-color: darkgreen;
-  display: flex;
-  justify-content: flex-end;
- padding-right: 10px;
-}

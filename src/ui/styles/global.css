@@ -8,11 +8,15 @@
   --color-bg: rgb(7 7 7 / 72%);
   --color-bg-elevated: rgb(24 24 24 / 68%);
   --color-bg-overlay: rgb(38 38 38 / 76%);
+  --color-bg-subtle: rgb(255 255 255 / 5%);
+  --color-bg-muted: rgb(0 0 0 / 18%);
 
   /* Text */
   --color-text-primary: #ffffff;
   --color-text-secondary: #a0a0a0;
   --color-text-muted: #5a5a5a;
+  --color-text-on-accent: #ffffff;
+  --color-text-inverted: #000000;
 
   /* Accent */
   --color-accent: #ff0033;
@@ -20,6 +24,21 @@
 
   /* Borders */
   --color-border: rgb(255 255 255 / 10%);
+  --color-border-strong: rgb(255 255 255 / 18%);
+
+  /* Chrome */
+  --color-app-backdrop: #020202;
+  --color-window-chrome: rgb(3 3 3 / 76%);
+  --color-panel-chrome: rgb(24 24 24 / 76%);
+  --color-player-chrome: rgb(5 5 5 / 72%);
+  --color-backdrop-vignette: rgb(0 0 0 / 48%);
+  --color-control-hover: rgb(255 255 255 / 8%);
+  --color-control-active: rgb(255 255 255 / 12%);
+  --color-slider-track: #333333;
+  --color-slider-fill: #8f8f8f;
+  --color-slider-thumb: #ffffff;
+  --shadow-panel: 0 14px 34px rgb(0 0 0 / 45%);
+  --shadow-chrome: 0 14px 40px rgb(0 0 0 / 24%);
 
   /* Spacing */
   --spacing-xs: 4px;
@@ -56,6 +75,43 @@
 
   /* Layout */
   --sidebar-width: 220px;
+}
+
+html[data-app-theme="light"] {
+  --bg: #f4f5f7;
+  --chrome: #f8f9fb;
+  --text: #15171a;
+
+  --color-bg: rgb(248 249 251 / 88%);
+  --color-bg-elevated: rgb(255 255 255 / 92%);
+  --color-bg-overlay: rgb(237 240 245 / 94%);
+  --color-bg-subtle: rgb(24 30 38 / 5%);
+  --color-bg-muted: rgb(24 30 38 / 7%);
+
+  --color-text-primary: #15171a;
+  --color-text-secondary: #5d6673;
+  --color-text-muted: #8a94a3;
+  --color-text-on-accent: #ffffff;
+  --color-text-inverted: #ffffff;
+
+  --color-accent: #d7193f;
+  --color-accent-hover: #b81434;
+
+  --color-border: rgb(24 30 38 / 13%);
+  --color-border-strong: rgb(24 30 38 / 22%);
+
+  --color-app-backdrop: #eef1f5;
+  --color-window-chrome: rgb(248 249 251 / 88%);
+  --color-panel-chrome: rgb(255 255 255 / 86%);
+  --color-player-chrome: rgb(255 255 255 / 88%);
+  --color-backdrop-vignette: rgb(120 130 145 / 16%);
+  --color-control-hover: rgb(24 30 38 / 7%);
+  --color-control-active: rgb(24 30 38 / 11%);
+  --color-slider-track: #c8ced8;
+  --color-slider-fill: #596272;
+  --color-slider-thumb: #15171a;
+  --shadow-panel: 0 14px 34px rgb(24 30 38 / 14%);
+  --shadow-chrome: 0 14px 40px rgb(24 30 38 / 12%);
 }
 
 html,
@@ -103,14 +159,11 @@ textarea,
 }
 
 *:focus-visible {
-  outline: 2px solid #ffffff;
+  outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
 
 html[data-paper-pc] {
-  --color-bg: #070707;
-  --color-bg-elevated: #181818;
-  --color-bg-overlay: #262626;
   --transition-fast: 0s;
   --transition-base: 0s;
   --transition-slow: 0s;

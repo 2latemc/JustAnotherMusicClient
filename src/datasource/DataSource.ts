@@ -19,10 +19,16 @@ export type StreamData = {
 export abstract class DataSource {
   abstract getTrack(id: string): Promise<Track>;
   abstract getStreamUrl(track: Track): Promise<string>;
+  resolveDownloadStream?(
+    track: Track,
+    quality: import("../internal/audioQuality").AudioQuality,
+  ): Promise<{ url: string; mimeType: string; cookie?: string }>;
   search?(query: string, onUpdate?: (results: SearchResults) => void): Promise<SearchResults>;
   searchTracks?(query: string, onUpdate?: (tracks: Track[]) => void): Promise<Track[]>;
   getSearchSuggestions?(query: string, onUpdate?: (suggestions: string[]) => void): Promise<string[]>;
   getStreamData?(track: Track): Promise<StreamData>;
+  beginPlayReport?(track: Track): Promise<void>;
+  updatePlayReport?(track: Track, positionSec: number, final: boolean): Promise<void>;
   restoreSession?(): Promise<boolean>;
   signIn?(onPrompt: (prompt: AuthPrompt) => void): Promise<void>;
   signOut?(): Promise<void>;

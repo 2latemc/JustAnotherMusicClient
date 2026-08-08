@@ -5,8 +5,8 @@
   position: relative;
   z-index: 20;
   padding-right: 12px;
-  background: rgb(3 3 3 / 76%);
-  border-bottom: 1px solid rgb(255 255 255 / 8%);
+  background: var(--color-window-chrome);
+  border-bottom: 1px solid var(--color-border);
   backdrop-filter: blur(24px) saturate(115%);
   user-select: none;
   overflow: visible;
@@ -45,7 +45,7 @@
   padding: 0 16px;
 
   border: 0;
-  border-right: 1px solid rgb(255 255 255 / 7%);
+  border-right: 1px solid var(--color-border);
   border-radius: 0;
 
   background: transparent;
@@ -72,13 +72,13 @@
   position: absolute;
   inset: 0;
   z-index: -1;
-  border-right: 1px solid rgb(255 255 255 / 7%);
+  border-right: 1px solid var(--color-border);
   background:
-    linear-gradient(180deg, rgb(255 255 255 / 8%), transparent),
-    rgb(24 24 24 / 88%);
+    linear-gradient(180deg, var(--color-bg-subtle), transparent),
+    var(--color-panel-chrome);
   backdrop-filter: blur(30px) saturate(125%);
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 5%),
+    inset 0 1px 0 var(--color-bg-subtle),
     10px 0 28px rgb(0 0 0 / 10%);
   transition: background var(--transition-fast);
 }
@@ -95,8 +95,8 @@
 
 .homeButton:hover::before {
   background:
-    linear-gradient(180deg, rgb(255 255 255 / 7%), transparent),
-    rgb(25 25 25 / 96%);
+    linear-gradient(180deg, var(--color-bg-subtle), transparent),
+    var(--color-bg-overlay);
 }
 
 .homeButton:hover {
@@ -109,8 +109,8 @@
 
 .homeButtonActive::before {
   background:
-    linear-gradient(90deg, rgb(255 0 51 / 13%), rgb(255 255 255 / 4%)),
-    rgb(21 21 21 / 96%);
+    linear-gradient(90deg, rgb(255 0 51 / 13%), var(--color-bg-subtle)),
+    var(--color-bg-overlay);
 }
 
 .homeButtonIconOnly {
@@ -119,8 +119,8 @@
 
 .homeButtonActive:hover::before {
   background:
-    linear-gradient(90deg, rgb(255 0 51 / 17%), rgb(255 255 255 / 5%)),
-    rgb(23 23 23 / 97%);
+    linear-gradient(90deg, rgb(255 0 51 / 17%), var(--color-bg-subtle)),
+    var(--color-bg-overlay);
 }
 
 .homeButtonActive::after {
@@ -230,12 +230,12 @@
 
 .windowControlsWindows .windowButtonMinimize:hover,
 .windowControlsWindows .windowButtonMaximize:hover {
-  background: rgb(255 255 255 / 10%);
+  background: var(--color-control-hover);
 }
 
 .windowControlsWindows .windowButtonMinimize:active,
 .windowControlsWindows .windowButtonMaximize:active {
-  background: rgb(255 255 255 / 16%);
+  background: var(--color-control-active);
 }
 
 .windowControlsWindows .windowButtonClose:hover {

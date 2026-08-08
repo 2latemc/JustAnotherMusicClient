@@ -9,6 +9,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, TcpListener};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -26,7 +27,11 @@ use tauri::utils::config::FrontendDist;
 #[cfg(not(debug_assertions))]
 use tauri::utils::config_v1::WindowUrl;
 
-use tauri::{Emitter, Manager};
+use tauri::{
+    menu::MenuBuilder,
+    tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
+    Emitter, Manager,
+};
 
 #[cfg(target_os = "macos")]
 use aes_gcm::{
@@ -62,8 +67,15 @@ const YOUTUBE_COOKIE_CHUNK_SIZE: usize = 900;
 const YOUTUBE_COOKIE_MAX_CHUNKS: usize = 16;
 const DEFAULT_CACHE_MAX_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 const CURRENT_LOG_FILE_NAME: &str = "current.log";
+const CUSTOM_THEME_CSS_FILE_NAME: &str = "custom-theme.css";
+const CUSTOM_THEME_CSS_MAX_BYTES: u64 = 100 * 1024;
+const MINIMIZE_TO_TRAY_KEY: &str = "minimize-to-system-tray-enabled";
+const APP_TRAY_ID: &str = "main-tray";
+const TRAY_MENU_SHOW_ID: &str = "show-main-window";
+const TRAY_MENU_QUIT_ID: &str = "quit-app";
 
 static APP_LOG_FILE: OnceLock<Mutex<Option<File>>> = OnceLock::new();
+static DOWNLOAD_CANCEL_FLAGS: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = OnceLock::new();
 
 struct CacheLock(Mutex<()>);
 struct AppSettingsLock(Mutex<()>);
@@ -103,6 +115,30 @@ struct LocalAudioFile {
     title: String,
     album: Option<String>,
     duration_sec: Option<u64>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DownloadAudioSaveResult {
+    file_path: String,
+    byte_length: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DownloadDiscoveredFile {
+    track_id: String,
+    file_path: String,
+    mime_type: String,
+    byte_length: u64,
+    modified_at_ms: u64,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DownloadProgress {
+    track_id: String,
+    percent: u8,
 }
 
 fn cache_error(message: impl Into<String>) -> CommandError {
@@ -301,6 +337,108 @@ fn app_settings_path(app: &tauri::AppHandle) -> Result<PathBuf, CommandError> {
         })
 }
 
+fn custom_theme_css_path(app: &tauri::AppHandle) -> Result<PathBuf, CommandError> {
+    app.path()
+        .app_data_dir()
+        .map(|path| path.join(CUSTOM_THEME_CSS_FILE_NAME))
+        .map_err(|error| CommandError {
+            message: format!("application data directory unavailable: {error}"),
+        })
+}
+
+fn validate_custom_theme_css_path(path: &Path) -> Result<(), CommandError> {
+    if !path.is_file() {
+        return Err(CommandError {
+            message: "Choose a CSS file that exists.".to_string(),
+        });
+    }
+
+    if !path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("css"))
+    {
+        return Err(CommandError {
+            message: "Custom themes must use a .css file.".to_string(),
+        });
+    }
+
+    let metadata = fs::metadata(path).map_err(|error| CommandError {
+        message: format!("custom theme metadata read failed: {error}"),
+    })?;
+
+    if metadata.len() > CUSTOM_THEME_CSS_MAX_BYTES {
+        return Err(CommandError {
+            message: "Custom theme CSS must be 100 KB or smaller.".to_string(),
+        });
+    }
+
+    Ok(())
+}
+
+fn validate_custom_theme_css(css: &str) -> Result<(), CommandError> {
+    let normalized = css.to_ascii_lowercase();
+    if normalized.contains("@import") {
+        return Err(CommandError {
+            message: "Custom theme CSS cannot use @import.".to_string(),
+        });
+    }
+
+    if normalized.contains("javascript:") {
+        return Err(CommandError {
+            message: "Custom theme CSS cannot use javascript: URLs.".to_string(),
+        });
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn custom_theme_css_import(app: tauri::AppHandle, path: String) -> Result<(), CommandError> {
+    let source_path = PathBuf::from(path);
+    validate_custom_theme_css_path(&source_path)?;
+
+    let css = fs::read_to_string(&source_path).map_err(|error| CommandError {
+        message: format!("custom theme CSS read failed: {error}"),
+    })?;
+    validate_custom_theme_css(&css)?;
+
+    let target_path = custom_theme_css_path(&app)?;
+    if let Some(parent) = target_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| CommandError {
+            message: format!("custom theme directory creation failed: {error}"),
+        })?;
+    }
+
+    fs::write(target_path, css).map_err(|error| CommandError {
+        message: format!("custom theme CSS write failed: {error}"),
+    })
+}
+
+#[tauri::command]
+fn custom_theme_css_get(app: tauri::AppHandle) -> Result<Option<String>, CommandError> {
+    let path = custom_theme_css_path(&app)?;
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let metadata = fs::metadata(&path).map_err(|error| CommandError {
+        message: format!("custom theme metadata read failed: {error}"),
+    })?;
+
+    if metadata.len() > CUSTOM_THEME_CSS_MAX_BYTES {
+        return Err(CommandError {
+            message: "Custom theme CSS must be 100 KB or smaller.".to_string(),
+        });
+    }
+
+    let css = fs::read_to_string(path).map_err(|error| CommandError {
+        message: format!("custom theme CSS read failed: {error}"),
+    })?;
+    validate_custom_theme_css(&css)?;
+    Ok(Some(css))
+}
+
 fn read_app_settings(
     app: &tauri::AppHandle,
 ) -> Result<HashMap<String, serde_json::Value>, CommandError> {
@@ -318,6 +456,32 @@ fn read_app_settings(
     serde_json::from_slice(&bytes).map_err(|error| CommandError {
         message: format!("application settings parse failed: {error}"),
     })
+}
+
+fn read_bool_app_setting(app: &tauri::AppHandle, key: &str, default_value: bool) -> bool {
+    read_app_settings(app)
+        .ok()
+        .and_then(|settings| settings.get(key).and_then(|value| value.as_bool()))
+        .unwrap_or(default_value)
+}
+
+fn restore_main_window(app: &tauri::AppHandle) {
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.unminimize();
+        let _ = main.show();
+        let _ = main.set_focus();
+    }
+
+    if let Some(tray) = app.tray_by_id(APP_TRAY_ID) {
+        let _ = tray.set_visible(false);
+    }
+}
+
+fn hide_main_window_to_tray(app: &tauri::AppHandle, window: &tauri::Window) {
+    if let Some(tray) = app.tray_by_id(APP_TRAY_ID) {
+        let _ = tray.set_visible(true);
+    }
+    let _ = window.hide();
 }
 
 #[tauri::command]
@@ -1271,9 +1435,12 @@ fn media_server() -> Result<&'static MediaServer, CommandError> {
     let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(|error| CommandError {
         message: format!("media server bind failed: {error}"),
     })?;
-    let port = listener.local_addr().map_err(|error| CommandError {
-        message: format!("media server local address failed: {error}"),
-    })?.port();
+    let port = listener
+        .local_addr()
+        .map_err(|error| CommandError {
+            message: format!("media server local address failed: {error}"),
+        })?
+        .port();
     let items = Arc::new(Mutex::new(HashMap::<String, MediaItem>::new()));
     let thread_items = Arc::clone(&items);
     thread::spawn(move || {
@@ -1284,7 +1451,10 @@ fn media_server() -> Result<&'static MediaServer, CommandError> {
                     thread::spawn(move || handle_media_request(stream, items));
                 }
                 Err(error) => {
-                    eprintln!("[internal][tauri][warn] media server accept failed error={}", error);
+                    eprintln!(
+                        "[internal][tauri][warn] media server accept failed error={}",
+                        error
+                    );
                 }
             }
         }
@@ -1308,7 +1478,10 @@ fn handle_media_request(
     let read_len = match stream.read(&mut buffer) {
         Ok(len) => len,
         Err(error) => {
-            eprintln!("[internal][tauri][warn] media server read failed error={}", error);
+            eprintln!(
+                "[internal][tauri][warn] media server read failed error={}",
+                error
+            );
             return;
         }
     };
@@ -1343,8 +1516,11 @@ fn handle_media_request(
     };
 
     let total_len = item.bytes.len();
-    let (status, start, end) = parse_media_range(range_header.as_deref(), total_len)
-        .unwrap_or(("200 OK", 0, total_len.saturating_sub(1)));
+    let (status, start, end) = parse_media_range(range_header.as_deref(), total_len).unwrap_or((
+        "200 OK",
+        0,
+        total_len.saturating_sub(1),
+    ));
     let body_len = if total_len == 0 { 0 } else { end - start + 1 };
     let content_range = if status.starts_with("206") {
         format!("Content-Range: bytes {start}-{end}/{total_len}\r\n")
@@ -1363,7 +1539,10 @@ fn handle_media_request(
     let _ = stream.write_all(&item.bytes[start..=end]);
 }
 
-fn parse_media_range(range_header: Option<&str>, total_len: usize) -> Option<(&'static str, usize, usize)> {
+fn parse_media_range(
+    range_header: Option<&str>,
+    total_len: usize,
+) -> Option<(&'static str, usize, usize)> {
     let value = range_header?.strip_prefix("bytes=")?;
     if total_len == 0 {
         return None;
@@ -1383,80 +1562,270 @@ fn parse_media_range(range_header: Option<&str>, total_len: usize) -> Option<(&'
     (start <= end && start < total_len).then_some(("206 Partial Content", start, end))
 }
 
-#[tauri::command]
-async fn fetch_audio_bytes(url: String, track_id: String) -> Result<Vec<u8>, CommandError> {
-    let started_at = Instant::now();
-    eprintln!(
-        "[internal][tauri][info] fetch_audio_bytes start url={} track_id={}",
-        url, track_id
-    );
-    let request_url = url::Url::parse(&url).map_err(|error| CommandError {
-        message: format!("audio URL parse failed: {error}"),
-    })?;
+fn build_audio_http_client(
+    request_url: &url::Url,
+    force_signed_ip_family: bool,
+) -> Result<reqwest::Client, CommandError> {
     let mut client_builder = reqwest::Client::builder();
-    if let Some(local_address) = signed_googlevideo_local_address(&request_url) {
-        eprintln!(
-            "[internal][tauri][info] fetch_audio_bytes forcing signed IP family family={}",
-            if local_address.is_ipv6() { "ipv6" } else { "ipv4" }
-        );
-        client_builder = client_builder.local_address(local_address);
+    if force_signed_ip_family {
+        if let Some(local_address) = signed_googlevideo_local_address(request_url) {
+            eprintln!(
+                "[internal][tauri][info] fetch_audio_bytes forcing signed IP family family={}",
+                if local_address.is_ipv6() {
+                    "ipv6"
+                } else {
+                    "ipv4"
+                }
+            );
+            client_builder = client_builder.local_address(local_address);
+        }
     }
-    let client = client_builder.build().map_err(|error| CommandError {
+    client_builder.build().map_err(|error| CommandError {
         message: format!("audio HTTP client creation failed: {error}"),
-    })?;
-    let response = client
-        .get(&url)
+    })
+}
+
+fn signed_content_length(request_url: &url::Url) -> Option<u64> {
+    request_url
+        .query_pairs()
+        .find(|(key, _)| key == "clen")
+        .and_then(|(_, value)| value.parse::<u64>().ok())
+}
+
+fn audio_url_with_range(url: &str, start: u64, end: u64) -> String {
+    let separator = if url.contains('?') { '&' } else { '?' };
+    format!("{url}{separator}range={start}-{end}")
+}
+
+fn audio_chunk_size(total: u64) -> u64 {
+    const MIN_CHUNK_BYTES: u64 = 512 * 1024;
+    const MAX_CHUNK_BYTES: u64 = 4 * 1024 * 1024;
+    const TARGET_CHUNKS: u64 = 6;
+    (total / TARGET_CHUNKS)
+        .max(MIN_CHUNK_BYTES)
+        .min(MAX_CHUNK_BYTES)
+}
+
+async fn send_audio_bytes_request(
+    client: &reqwest::Client,
+    url: &str,
+    track_id: &str,
+    cookie: Option<&str>,
+    client_name: &str,
+    profile_name: &str,
+    referer_origin: Option<(&str, &str)>,
+) -> Result<Vec<u8>, CommandError> {
+    let mut request = client
+        .get(url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
         .header("Accept", "*/*")
         .header("Accept-Language", "en-US,en;q=0.9")
-        .header("Accept-Encoding", "identity;q=1, *;q=0")
-        .header("Range", "bytes=0-")
-        .header("Origin", "https://www.youtube.com")
-        .header("Referer", &format!("https://www.youtube.com/watch?v={}", track_id))
-        .header("Sec-Fetch-Dest", "audio")
-        .header("Sec-Fetch-Mode", "no-cors")
-        .header("Sec-Fetch-Site", "cross-site")
-        .send()
-        .await
-        .map_err(|error| {
-            eprintln!(
-                "[internal][tauri][error] fetch_audio_bytes request failed url={} error={}",
-                url, error
-            );
-            CommandError {
-                message: format!("request failed: {error}"),
-            }
-        })?;
+        .header("Accept-Encoding", "identity;q=1, *;q=0");
+
+    if let Some((referer, origin)) = referer_origin {
+        request = request
+            .header("Origin", origin)
+            .header("Referer", referer)
+            .header("Sec-Fetch-Dest", "audio")
+            .header("Sec-Fetch-Mode", "no-cors")
+            .header("Sec-Fetch-Site", "cross-site");
+    }
+
+    if let Some(cookie) = cookie.filter(|value| !value.trim().is_empty()) {
+        request = request.header("Cookie", cookie);
+    }
+
+    let response = request.send().await.map_err(|error| {
+        eprintln!(
+            "[internal][tauri][error] fetch_audio_bytes request failed url={} track_id={} client={} profile={} error={}",
+            url, track_id, client_name, profile_name, error
+        );
+        CommandError {
+            message: format!("request failed: {error}"),
+        }
+    })?;
 
     if !response.status().is_success() {
+        let headers = response
+            .headers()
+            .iter()
+            .map(|(name, value)| format!("{name}={}", value.to_str().unwrap_or("?")))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let status = response.status();
         eprintln!(
-            "[internal][tauri][warn] fetch_audio_bytes non-success url={} status={}",
-            url,
-            response.status()
+            "[internal][tauri][warn] fetch_audio_bytes non-success url={} track_id={} client={} profile={} status={} headers=[{}]",
+            url, track_id, client_name, profile_name, status, headers
         );
         return Err(CommandError {
-            message: format!("request returned {}", response.status()),
+            message: format!("request returned {status}"),
         });
     }
 
     let body = response.bytes().await.map_err(|error| {
         eprintln!(
-            "[internal][tauri][error] fetch_audio_bytes body read failed url={} error={}",
-            url, error
+            "[internal][tauri][error] fetch_audio_bytes body read failed url={} track_id={} client={} profile={} error={}",
+            url, track_id, client_name, profile_name, error
         );
         CommandError {
             message: format!("read body failed: {error}"),
         }
     })?;
 
-    eprintln!(
-        "[internal][tauri][info] fetch_audio_bytes success url={} bytes={} duration_ms={}",
-        url,
-        body.len(),
-        started_at.elapsed().as_millis()
-    );
-
     Ok(body.to_vec())
+}
+
+async fn fetch_audio_bytes_inner(
+    url: &str,
+    track_id: &str,
+    cookie: Option<&str>,
+    cancel_flag: Option<&AtomicBool>,
+    mut on_progress: impl FnMut(u64, u64),
+) -> Result<Vec<u8>, CommandError> {
+    let started_at = Instant::now();
+    eprintln!(
+        "[internal][tauri][info] fetch_audio_bytes start url={} track_id={}",
+        url, track_id
+    );
+    let request_url = url::Url::parse(url).map_err(|error| CommandError {
+        message: format!("audio URL parse failed: {error}"),
+    })?;
+    let watch_referer = format!("https://www.youtube.com/watch?v={track_id}");
+    let music_profile = Some(("https://music.youtube.com/", "https://music.youtube.com"));
+    let request_profiles: Vec<(&str, Option<(&str, &str)>)> = vec![
+        ("music", music_profile),
+        (
+            "youtube",
+            Some((watch_referer.as_str(), "https://www.youtube.com")),
+        ),
+        ("bare", None),
+    ];
+    let client_profiles = if signed_googlevideo_local_address(&request_url).is_some() {
+        vec![("signed-ip-family", true), ("default-ip-family", false)]
+    } else {
+        vec![("default-ip-family", false)]
+    };
+    let total_bytes = signed_content_length(&request_url).unwrap_or(0);
+    let chunk_size = audio_chunk_size(total_bytes);
+    let use_range_query = total_bytes > chunk_size;
+    let mut failures = Vec::new();
+
+    for (client_name, force_signed_ip_family) in client_profiles {
+        let client = build_audio_http_client(&request_url, force_signed_ip_family)?;
+        for (profile_name, referer_origin) in &request_profiles {
+            if cancel_flag.is_some_and(|flag| flag.load(Ordering::SeqCst)) {
+                return Err(cache_error("download cancelled"));
+            }
+
+            if use_range_query {
+                let mut bytes = Vec::with_capacity(total_bytes as usize);
+                let mut start = 0u64;
+                let mut failed = None;
+                while start < total_bytes {
+                    if cancel_flag.is_some_and(|flag| flag.load(Ordering::SeqCst)) {
+                        return Err(cache_error("download cancelled"));
+                    }
+                    let end = (start + chunk_size - 1).min(total_bytes - 1);
+                    match send_audio_bytes_request(
+                        &client,
+                        &audio_url_with_range(url, start, end),
+                        track_id,
+                        cookie,
+                        client_name,
+                        profile_name,
+                        *referer_origin,
+                    )
+                    .await
+                    {
+                        Ok(chunk) => {
+                            bytes.extend_from_slice(&chunk);
+                            on_progress(bytes.len() as u64, total_bytes);
+                            start = end + 1;
+                        }
+                        Err(error) => {
+                            failed = Some(error);
+                            break;
+                        }
+                    }
+                }
+
+                if let Some(error) = failed {
+                    failures.push(format!("{client_name}/{profile_name}: {}", error.message));
+                    continue;
+                }
+
+                if bytes.len() as u64 != total_bytes {
+                    failures.push(format!(
+                        "{client_name}/{profile_name}: incomplete download {} of {} bytes",
+                        bytes.len(),
+                        total_bytes
+                    ));
+                    continue;
+                }
+
+                eprintln!(
+                    "[internal][tauri][info] fetch_audio_bytes success url={} client={} profile={} bytes={} ranged=true duration_ms={}",
+                    url,
+                    client_name,
+                    profile_name,
+                    bytes.len(),
+                    started_at.elapsed().as_millis()
+                );
+                return Ok(bytes);
+            }
+
+            let bytes = match send_audio_bytes_request(
+                &client,
+                url,
+                track_id,
+                cookie,
+                client_name,
+                profile_name,
+                *referer_origin,
+            )
+            .await
+            {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    failures.push(format!("{client_name}/{profile_name}: {}", error.message));
+                    continue;
+                }
+            };
+            let received = bytes.len() as u64;
+            on_progress(
+                received,
+                if total_bytes > 0 {
+                    total_bytes
+                } else {
+                    received
+                },
+            );
+
+            eprintln!(
+                "[internal][tauri][info] fetch_audio_bytes success url={} client={} profile={} bytes={} ranged=false duration_ms={}",
+                url,
+                client_name,
+                profile_name,
+                bytes.len(),
+                started_at.elapsed().as_millis()
+            );
+
+            return Ok(bytes);
+        }
+    }
+
+    Err(CommandError {
+        message: format!("request failed: {}", failures.join("; ")),
+    })
+}
+
+#[tauri::command]
+async fn fetch_audio_bytes(
+    url: String,
+    track_id: String,
+    cookie: Option<String>,
+) -> Result<Vec<u8>, CommandError> {
+    fetch_audio_bytes_inner(&url, &track_id, cookie.as_deref(), None, |_, _| {}).await
 }
 
 #[tauri::command]
@@ -1464,12 +1833,16 @@ async fn fetch_audio_source(
     url: String,
     track_id: String,
     mime_type: String,
+    cookie: Option<String>,
 ) -> Result<AudioSourcePayload, CommandError> {
-    let bytes = fetch_audio_bytes(url, track_id.clone()).await?;
-    if bytes.len() >= 12 && &bytes[4..8] != b"ftyp" {
+    let bytes =
+        fetch_audio_bytes_inner(&url, &track_id, cookie.as_deref(), None, |_, _| {}).await?;
+    if mime_type.contains("mp4") && bytes.len() >= 12 && &bytes[4..8] != b"ftyp" {
         let preview = String::from_utf8_lossy(&bytes[..bytes.len().min(120)]).replace('\n', " ");
         return Err(CommandError {
-            message: format!("Audio download was not an MP4 file. Response started with: {preview}"),
+            message: format!(
+                "Audio download was not an MP4 file. Response started with: {preview}"
+            ),
         });
     }
 
@@ -1501,6 +1874,318 @@ async fn fetch_audio_source(
         mime_type,
         byte_length,
     })
+}
+
+fn download_cancel_flags() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
+    DOWNLOAD_CANCEL_FLAGS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn download_extension_for_mime(mime_type: &str) -> &'static str {
+    let normalized = mime_type.to_ascii_lowercase();
+    if normalized.contains("webm") {
+        "webm"
+    } else if normalized.contains("mp4") || normalized.contains("m4a") {
+        "m4a"
+    } else if normalized.contains("mpeg") || normalized.contains("mp3") {
+        "mp3"
+    } else if normalized.contains("ogg") || normalized.contains("opus") {
+        "ogg"
+    } else {
+        "audio"
+    }
+}
+
+fn download_mime_for_path(path: &Path) -> String {
+    local_audio_mime_type(path).to_string()
+}
+
+fn sanitize_download_filename_part(value: &str) -> String {
+    let mut result = String::new();
+    for character in value.chars() {
+        if matches!(
+            character,
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' | '\0'
+        ) {
+            result.push('_');
+        } else if character.is_control() {
+            result.push(' ');
+        } else {
+            result.push(character);
+        }
+    }
+    let trimmed = result
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim_matches(['.', ' '])
+        .to_string();
+    if trimmed.is_empty() {
+        "Unknown".to_string()
+    } else {
+        trimmed.chars().take(96).collect()
+    }
+}
+
+fn validate_download_track_id(track_id: &str) -> Result<(), CommandError> {
+    let invalid = track_id.is_empty()
+        || track_id.contains("..")
+        || track_id
+            .chars()
+            .any(|value| value == '/' || value == '\\' || value == ':' || value == '\0');
+    if invalid {
+        return Err(cache_error("invalid download track id"));
+    }
+    Ok(())
+}
+
+fn default_music_dir() -> PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(profile) = std::env::var_os("USERPROFILE") {
+            return PathBuf::from(profile).join("Music");
+        }
+    }
+
+    if let Some(home) = std::env::var_os("HOME") {
+        return PathBuf::from(home).join("Music");
+    }
+
+    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+}
+
+#[tauri::command]
+fn download_default_folder() -> Result<String, CommandError> {
+    Ok(default_music_dir()
+        .join("Just Another Music Client")
+        .join("Downloads")
+        .to_string_lossy()
+        .to_string())
+}
+
+fn download_file_path(
+    folder: &str,
+    track_id: &str,
+    artist: &str,
+    title: &str,
+    mime_type: &str,
+) -> Result<PathBuf, CommandError> {
+    validate_download_track_id(track_id)?;
+    let folder = PathBuf::from(folder);
+    let extension = download_extension_for_mime(mime_type);
+    let artist = sanitize_download_filename_part(artist);
+    let title = sanitize_download_filename_part(title);
+    Ok(folder.join(format!("{track_id} - {artist} - {title}.{extension}")))
+}
+
+#[tauri::command]
+async fn download_audio_save(
+    app: tauri::AppHandle,
+    url: String,
+    track_id: String,
+    title: String,
+    artist: String,
+    folder: String,
+    mime_type: String,
+    cookie: Option<String>,
+) -> Result<DownloadAudioSaveResult, CommandError> {
+    validate_download_track_id(&track_id)?;
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    {
+        let mut flags = download_cancel_flags().lock().map_err(|_| CommandError {
+            message: "download cancel lock poisoned".into(),
+        })?;
+        flags.insert(track_id.clone(), cancel_flag.clone());
+    }
+
+    let target_path = download_file_path(&folder, &track_id, &artist, &title, &mime_type)?;
+    if let Some(parent) = target_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| CommandError {
+            message: format!("download directory creation failed: {error}"),
+        })?;
+    }
+    let part_path = target_path.with_extension("part");
+    let _ = fs::remove_file(&part_path);
+
+    if cancel_flag.load(Ordering::SeqCst) {
+        return Err(cache_error("download cancelled"));
+    }
+
+    let mut last_percent = 0u8;
+    let bytes = match fetch_audio_bytes_inner(
+        &url,
+        &track_id,
+        cookie.as_deref(),
+        Some(cancel_flag.as_ref()),
+        |received, total| {
+            if total == 0 {
+                return;
+            }
+            let percent = ((received * 100) / total).min(99) as u8;
+            if percent <= last_percent {
+                return;
+            }
+            last_percent = percent;
+            let _ = app.emit(
+                "download-progress",
+                DownloadProgress {
+                    track_id: track_id.clone(),
+                    percent,
+                },
+            );
+        },
+    )
+    .await
+    {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let _ = fs::remove_file(&part_path);
+            let _ = download_cancel_flags()
+                .lock()
+                .map(|mut flags| flags.remove(&track_id));
+            return Err(error);
+        }
+    };
+
+    if cancel_flag.load(Ordering::SeqCst) {
+        let _ = fs::remove_file(&part_path);
+        let _ = download_cancel_flags()
+            .lock()
+            .map(|mut flags| flags.remove(&track_id));
+        return Err(cache_error("download cancelled"));
+    }
+
+    fs::write(&part_path, &bytes).map_err(|error| CommandError {
+        message: format!("download write failed: {error}"),
+    })?;
+    if target_path.exists() {
+        fs::remove_file(&target_path).map_err(|error| CommandError {
+            message: format!("download replace failed: {error}"),
+        })?;
+    }
+    fs::rename(&part_path, &target_path).map_err(|error| CommandError {
+        message: format!("download finalize failed: {error}"),
+    })?;
+
+    let _ = app.emit(
+        "download-progress",
+        DownloadProgress {
+            track_id: track_id.clone(),
+            percent: 100,
+        },
+    );
+    let _ = download_cancel_flags()
+        .lock()
+        .map(|mut flags| flags.remove(&track_id));
+
+    Ok(DownloadAudioSaveResult {
+        file_path: target_path.to_string_lossy().to_string(),
+        byte_length: bytes.len() as u64,
+    })
+}
+
+#[tauri::command]
+fn download_audio_cancel(track_id: String) -> Result<(), CommandError> {
+    validate_download_track_id(&track_id)?;
+    if let Some(flag) = download_cancel_flags()
+        .lock()
+        .map_err(|_| CommandError {
+            message: "download cancel lock poisoned".into(),
+        })?
+        .get(&track_id)
+    {
+        flag.store(true, Ordering::SeqCst);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn download_audio_file_exists(file_path: String) -> Result<bool, CommandError> {
+    Ok(PathBuf::from(file_path).is_file())
+}
+
+#[tauri::command]
+fn download_audio_source(
+    file_path: String,
+    track_id: String,
+    mime_type: String,
+) -> Result<AudioSourcePayload, CommandError> {
+    validate_download_track_id(&track_id)?;
+    let path = PathBuf::from(file_path);
+    if !path.is_file() {
+        return Err(cache_error("downloaded audio file is unavailable"));
+    }
+    let bytes = fs::read(&path).map_err(|error| CommandError {
+        message: format!("downloaded audio read failed: {error}"),
+    })?;
+    let byte_length = bytes.len();
+    let server = media_server()?;
+    let key = format!("download-{track_id}-{}", now_ms());
+    {
+        let mut items = server.items.lock().map_err(|_| CommandError {
+            message: "media server cache lock poisoned".into(),
+        })?;
+        items.insert(
+            key.clone(),
+            MediaItem {
+                bytes: Arc::new(bytes),
+                mime_type: mime_type.clone(),
+            },
+        );
+    }
+    Ok(AudioSourcePayload {
+        url: format!("{}/audio/{}", server.origin, key),
+        mime_type,
+        byte_length,
+    })
+}
+
+fn parse_download_track_id(path: &Path) -> Option<String> {
+    let stem = path.file_stem()?.to_str()?;
+    let (track_id, _) = stem.split_once(" - ")?;
+    if validate_download_track_id(track_id).is_ok() {
+        Some(track_id.to_string())
+    } else {
+        None
+    }
+}
+
+#[tauri::command]
+fn download_audio_list(folder: String) -> Result<Vec<DownloadDiscoveredFile>, CommandError> {
+    let folder = PathBuf::from(folder);
+    if !folder.exists() {
+        return Ok(Vec::new());
+    }
+    let mut files = Vec::new();
+    let entries = fs::read_dir(&folder).map_err(|error| CommandError {
+        message: format!("download folder read failed: {error}"),
+    })?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() || !is_local_audio_file(&path) {
+            continue;
+        }
+        let Some(track_id) = parse_download_track_id(&path) else {
+            continue;
+        };
+        let metadata = entry.metadata().map_err(|error| CommandError {
+            message: format!("download metadata read failed: {error}"),
+        })?;
+        let modified_at_ms = metadata
+            .modified()
+            .ok()
+            .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis() as u64)
+            .unwrap_or_default();
+        files.push(DownloadDiscoveredFile {
+            track_id,
+            file_path: path.to_string_lossy().to_string(),
+            mime_type: download_mime_for_path(&path),
+            byte_length: metadata.len(),
+            modified_at_ms,
+        });
+    }
+    files.sort_by(|left, right| left.file_path.cmp(&right.file_path));
+    Ok(files)
 }
 
 #[tauri::command]
@@ -2050,7 +2735,11 @@ async fn proxy_http_request(
         eprintln!(
             "[internal][tauri][info] proxy_http_request forcing signed IP family url={} family={}",
             request_target,
-            if local_address.is_ipv6() { "ipv6" } else { "ipv4" }
+            if local_address.is_ipv6() {
+                "ipv6"
+            } else {
+                "ipv4"
+            }
         );
         client_builder = client_builder.local_address(local_address);
     }
@@ -2259,6 +2948,39 @@ pub fn run() {
             if let Err(error) = initialize_app_log(app.handle()) {
                 std::eprintln!("[internal][tauri][warn] {}", error.message);
             }
+
+            let tray_menu = MenuBuilder::new(app)
+                .text(TRAY_MENU_SHOW_ID, "Show")
+                .separator()
+                .text(TRAY_MENU_QUIT_ID, "Quit")
+                .build()?;
+            let mut tray = TrayIconBuilder::with_id(APP_TRAY_ID)
+                .menu(&tray_menu)
+                .tooltip("Just Another Music Client")
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| match event.id().as_ref() {
+                    TRAY_MENU_SHOW_ID => restore_main_window(app),
+                    TRAY_MENU_QUIT_ID => app.exit(0),
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| match event {
+                    TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        ..
+                    }
+                    | TrayIconEvent::DoubleClick {
+                        button: MouseButton::Left,
+                        ..
+                    } => restore_main_window(tray.app_handle()),
+                    _ => {}
+                });
+
+            if let Some(icon) = app.default_window_icon().cloned() {
+                tray = tray.icon(icon);
+            }
+
+            let tray = tray.build(app)?;
+            tray.set_visible(false)?;
             Ok(())
         })
         .on_window_event(move |window, event| match event {
@@ -2269,7 +2991,12 @@ pub fn run() {
                 );
                 if window.label() == "main" {
                     api.prevent_close();
-                    window.app_handle().exit(0);
+                    let app = window.app_handle();
+                    if read_bool_app_setting(app, MINIMIZE_TO_TRAY_KEY, false) {
+                        hide_main_window_to_tray(app, window);
+                    } else {
+                        app.exit(0);
+                    }
                 }
             }
             tauri::WindowEvent::Focused(false) => {
@@ -2309,9 +3036,17 @@ pub fn run() {
             app_setting_set,
             app_setting_remove,
             app_settings_clear,
+            custom_theme_css_import,
+            custom_theme_css_get,
             open_current_log,
             fetch_audio_bytes,
             fetch_audio_source,
+            download_default_folder,
+            download_audio_save,
+            download_audio_cancel,
+            download_audio_file_exists,
+            download_audio_source,
+            download_audio_list,
             fetch_youtube_music_audio,
             proxy_http_request,
             save_youtube_credentials,

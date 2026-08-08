@@ -48,7 +48,7 @@ function isMiniPlayerHoverAction(value: unknown): value is MiniPlayerHoverAction
   return value === "seek" || value === "volume";
 }
 
-function readMiniPlayerHoverAction() {
+function readMiniPlayerHoverAction(): MiniPlayerHoverAction {
   return readLocalJsonSetting(HOVER_ACTION_STORAGE_KEY, isMiniPlayerHoverAction) ?? "seek";
 }
 
@@ -148,6 +148,6 @@ export function useMiniPlayerEnabled() {
   return useSyncExternalStore(subscribe, readMiniPlayerEnabled, () => true);
 }
 
-export function useMiniPlayerHoverAction() {
+export function useMiniPlayerHoverAction(): MiniPlayerHoverAction {
   return useSyncExternalStore(subscribeHoverAction, readMiniPlayerHoverAction, () => "seek");
 }

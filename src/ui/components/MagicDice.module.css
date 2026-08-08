@@ -27,5 +27,5 @@
 }
 
 .diceIcon {
-  color: white;
+  color: var(--color-text-on-accent);
 }

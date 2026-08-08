@@ -81,7 +81,7 @@
   flex-shrink: 0;
   overflow: hidden;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--color-bg-overlay);
 }
 
 .artwork img {

@@ -2,14 +2,14 @@ import { IconLayoutDashboard } from "@tabler/icons-react";
 import { useMemo, useRef } from "react";
 import styles from "./TitleBar.module.css";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { invoke } from "@tauri-apps/api/core";
-import { logInternalError, logInternalInfo, logInternalWarn } from "../../internal/logging";
+import { logInternalError } from "../../internal/logging";
 import { MusicTabs } from "./MusicTabs";
 import type { Tab } from "../types/tab";
 import {
   useNativeWindowControls,
   useWindowsStyleWindowControls,
 } from "../settings/windowControls";
+import { DownloadsPopover } from "./DownloadsPopover";
 
 interface TitleBarProps {
   tabs: Tab[];
@@ -172,6 +172,8 @@ export function TitleBar({
         onDoubleClick={() => void handleToggleMaximize()}
       />
 
+      <DownloadsPopover />
+
       {!nativeWindowControls && (
         <div className={windowControlsClasses} aria-label="Window controls">
           <button
@@ -199,16 +201,9 @@ export function TitleBar({
             aria-label="Close"
             className={`${styles.windowButton} ${styles.windowButtonClose}`}
             onClick={() => {
-              logInternalInfo("TitleBar.close clicked");
-              void invoke("quit_app")
-                .then(() => {
-                  logInternalInfo("TitleBar.close quit_app invoked");
-                })
-                .catch((error) => {
-                  logInternalError("TitleBar.close quit_app failed", error);
-                  logInternalWarn("TitleBar.close fallback to appWindow.close");
-                  void appWindow.close();
-                });
+              void appWindow.close().catch((error) => {
+                logInternalError("TitleBar.close failed", error);
+              });
             }}
           >
             <span aria-hidden="true" className={styles.windowIcon}>

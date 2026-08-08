@@ -34,11 +34,19 @@ import { LastFmService } from "../player/LastFm";
 import { playerUIStore, usePlayerUIState } from "./stores/playerUIStore";
 import { AppLoadingScreen } from "./components/AppLoadingScreen";
 import { UpdateToast } from "./components/UpdateToast";
+import { ErrorToastViewport } from "./components/ErrorToastViewport";
+import { ReleaseChangelogModal } from "./components/ReleaseChangelogModal";
 import {
   checkForUpdates,
   isUpdateSnoozed,
   type UpdateInfo,
 } from "../internal/updateChecker";
+import {
+  fetchInstalledReleaseChangelog,
+  hasShownReleaseChangelog,
+  markReleaseChangelogShown,
+  type ReleaseChangelog,
+} from "../internal/releaseChangelog";
 import {
   clearAppSettings,
   getAppSetting,
@@ -73,6 +81,7 @@ import {
 import { useLastFmScrobblingEnabled } from "./settings/lastfm";
 import { persistMainWindowGeometry } from "./settings/mainWindowGeometry";
 import { hydratePlaybackSettings } from "../player/playbackSettings";
+import { appErrorManager } from "./errors/errorManager";
 const restoredSession = loadAppSession();
 const LOADING_SCREEN_FADE_MS = 80;
 const LOADING_SCREEN_MAX_MS = 4000;
@@ -242,6 +251,7 @@ export default function App() {
     () => isMacOS && localStorage.getItem(KEYCHAIN_NOTICE_COMPLETE_KEY) !== "true"
   );
   const [showOnboardingWelcome, setShowOnboardingWelcome] = useState(false);
+  const [isMiniPlayerVisible, setIsMiniPlayerVisible] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -273,9 +283,16 @@ export default function App() {
     };
   }, []);
   const [availableUpdate, setAvailableUpdate] = useState<UpdateInfo | null>(null);
+  const [releaseChangelog, setReleaseChangelog] = useState<ReleaseChangelog | null>(null);
   const [isExpandedPlayerBar,setIsExpandedPlayerBar]=  useState(false)
   const dismissAvailableUpdate = useCallback(() => {
     setAvailableUpdate(null);
+  }, []);
+  const dismissReleaseChangelog = useCallback(() => {
+    setReleaseChangelog((current) => {
+      if (current) markReleaseChangelogShown(current.version);
+      return null;
+    });
   }, []);
   const loadingScreenDismissedRef = useRef(false);
   const loadingScreenStartedAtRef = useRef(performance.now());
@@ -283,7 +300,7 @@ export default function App() {
   const miniPlayerEnabledRef = useRef(miniPlayerEnabled);
   const miniPlayerRestoreSuppressUntilRef = useRef(0);
   const mainWindowDragSuppressUntilRef = useRef(0);
-  const lastErrorAlertRef = useRef<string | null>(null);
+  const lastErrorNotificationRef = useRef<string | null>(null);
   const sessionStateRef = useRef({ tabs, activeTabId, nextTabId });
   const sessionPersistenceDisabledRef = useRef(false);
   const sleepRecoveryLastTickRef = useRef(Date.now());
@@ -303,6 +320,9 @@ export default function App() {
       nextTabId: current.nextTabId,
       player: tabManager.exportSession(),
     });
+  }, []);
+  const setMiniPlayerVisible = useCallback((visible: boolean) => {
+    setIsMiniPlayerVisible(visible);
   }, []);
 
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
@@ -482,6 +502,17 @@ export default function App() {
   useMediaSession(playerState, playerController);
 
   useEffect(() => {
+    if (!lastFmScrobblingEnabled || !playerState.currentTrack) {
+      LastFmService.updatePlayback({
+        track: playerState.currentTrack,
+        status: playerState.status,
+        currentTime: playerController.getCurrentTime(),
+        duration: playerController.getDuration(),
+        enabled: lastFmScrobblingEnabled,
+      });
+      return;
+    }
+
     const syncLastFm = () => {
       LastFmService.updatePlayback({
         track: playerState.currentTrack,
@@ -493,6 +524,8 @@ export default function App() {
     };
 
     syncLastFm();
+    if (playerState.status !== "playing") return;
+
     const intervalId = window.setInterval(syncLastFm, 1000);
     return () => window.clearInterval(intervalId);
   }, [
@@ -525,18 +558,24 @@ export default function App() {
 
   useEffect(() => {
     if (libraryState.status !== "error" || !libraryState.error) return;
-    const message = `YouTube Music sign-in or library sync failed:\n\n${libraryState.error}`;
-    if (lastErrorAlertRef.current === message) return;
-    lastErrorAlertRef.current = message;
-    window.alert(message);
+    const message = libraryState.error;
+    const key = `library:${message}`;
+    if (lastErrorNotificationRef.current === key) return;
+    lastErrorNotificationRef.current = key;
+    appErrorManager.report(message, {
+      title: "YouTube Music sign-in or library sync failed",
+    });
   }, [libraryState.error, libraryState.status]);
 
   useEffect(() => {
     if (playerState.status !== "error" || !playerState.error) return;
-    const message = `Playback failed:\n\n${playerState.error}`;
-    if (lastErrorAlertRef.current === message) return;
-    lastErrorAlertRef.current = message;
-    window.alert(message);
+    const message = playerState.error;
+    const key = `playback:${message}`;
+    if (lastErrorNotificationRef.current === key) return;
+    lastErrorNotificationRef.current = key;
+    appErrorManager.report(message, {
+      title: "Playback failed",
+    });
   }, [playerState.error, playerState.status]);
 
   useEffect(() => {
@@ -590,10 +629,8 @@ export default function App() {
   }, [dismissLoadingScreen, libraryState.library, libraryState.status, showKeychainNotice]);
 
   useEffect(() => {
-    const intervalId = window.setInterval(persistAppSession, 1000);
     window.addEventListener("beforeunload", persistAppSession);
     return () => {
-      window.clearInterval(intervalId);
       window.removeEventListener("beforeunload", persistAppSession);
       persistAppSession();
     };
@@ -1037,6 +1074,42 @@ export default function App() {
       loadingScreenState !== "hidden"
       || showKeychainNotice
       || showOnboardingWelcome
+      || onboardingComplete === false
+    ) {
+      return;
+    }
+
+    let active = true;
+    void fetchInstalledReleaseChangelog()
+      .then((changelog) => {
+        if (
+          active
+          && changelog
+          && !hasShownReleaseChangelog(changelog.version)
+        ) {
+          setReleaseChangelog(changelog);
+        }
+      })
+      .catch(() => {
+        // Release notes should never interrupt startup.
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [
+    loadingScreenState,
+    onboardingComplete,
+    showKeychainNotice,
+    showOnboardingWelcome,
+  ]);
+
+  useEffect(() => {
+    if (
+      loadingScreenState !== "hidden"
+      || showKeychainNotice
+      || showOnboardingWelcome
+      || releaseChangelog
     ) {
       return;
     }
@@ -1062,7 +1135,7 @@ export default function App() {
       active = false;
       window.clearTimeout(timer);
     };
-  }, [loadingScreenState, showKeychainNotice, showOnboardingWelcome]);
+  }, [loadingScreenState, releaseChangelog, showKeychainNotice, showOnboardingWelcome]);
 
   const handleToggleLyrics = () => {
     if (playerUIState.isLyricsOpen) {
@@ -1342,9 +1415,12 @@ useEffect(() => {
 
   void (async () => {
     const miniWin = await WebviewWindow.getByLabel("mini-player");
-    if (miniWin) await miniWin.hide();
+    if (miniWin) {
+      await miniWin.hide();
+      setMiniPlayerVisible(false);
+    }
   })();
-}, [miniPlayerEnabled]);
+}, [miniPlayerEnabled, setMiniPlayerVisible]);
 
 
 useEffect(() => {
@@ -1352,6 +1428,7 @@ useEffect(() => {
     const hideMiniPlayer = async () => {
       const miniWin = await WebviewWindow.getByLabel("mini-player");
       if (miniWin) await miniWin.hide();
+      setMiniPlayerVisible(false);
     };
 
     const showMiniPlayerIfAllowed = async () => {
@@ -1360,16 +1437,19 @@ useEffect(() => {
 
       if (Date.now() < mainWindowDragSuppressUntilRef.current) {
         await miniWin.hide();
+        setMiniPlayerVisible(false);
         return;
       }
 
       if (Date.now() < miniPlayerRestoreSuppressUntilRef.current) {
         await miniWin.hide();
+        setMiniPlayerVisible(false);
         return;
       }
 
       if (!miniPlayerEnabledRef.current) {
         await miniWin.hide();
+        setMiniPlayerVisible(false);
         return;
       }
 
@@ -1381,6 +1461,7 @@ useEffect(() => {
       }
 
       await miniWin.show();
+      setMiniPlayerVisible(true);
       if (isLinux) {
         try {
           await placeMiniPlayerAtBottomCenter(miniWin);
@@ -1423,6 +1504,9 @@ useEffect(() => {
         saveMiniPlayerPosition(event.payload);
       },
     );
+    const unlistenHidden = await listen("mini-player:hidden", () => {
+      setMiniPlayerVisible(false);
+    });
 
     if (!miniPlayerEnabledRef.current) {
       await hideMiniPlayer();
@@ -1435,12 +1519,13 @@ useEffect(() => {
       unlistenFocus();
       unlistenRestoreMain();
       unlistenPositionChanged();
+      unlistenHidden();
     };
   };
 
   const cleanup = setupListeners();
   return () => { cleanup.then(fn => fn?.()); };
-}, []);
+}, [setMiniPlayerVisible]);
 
 
 useEffect(() => {
@@ -1493,24 +1578,28 @@ useEffect(() => {
   const unsubscribe = tabManager.subscribe(syncPlayerState);
 
   const syncTime = () => {
+    if (!isMiniPlayerVisible || !tabManager.getActiveState().currentTrack) return;
+
     void emit("player-time-sync", {
       currentTime: playerController.getCurrentTime(),
       duration: playerController.getDuration(),
     });
-    void emit("player-volume-sync", {
-      muted: playerController.isMuted(),
-      volume: playerController.getVolume(),
-    });
   };
 
   syncTime();
+  if (!isMiniPlayerVisible || !tabManager.getActiveState().currentTrack) {
+    return () => {
+      unsubscribe();
+    };
+  }
+
   const timeSyncIntervalId = window.setInterval(syncTime, 1000);
 
   return () => {
     unsubscribe();
     window.clearInterval(timeSyncIntervalId);
   };
-}, []);
+}, [isMiniPlayerVisible, playerState.currentTrack]);
 
 useEffect(() => {
   const setup = async () => {
@@ -1550,11 +1639,13 @@ useEffect(() => {
 }, []);
 
 useEffect(() => {
+  if (!isMiniPlayerVisible) return;
+
   void emit("player-volume-sync", {
     muted: playerState.muted,
     volume: playerState.volume,
   });
-}, [playerState.muted, playerState.volume]);
+}, [isMiniPlayerVisible, playerState.muted, playerState.volume]);
   return (
     <ArtistNavigationProvider onNavigate={handleNavigateArtist}>
     <TrackContextMenuProvider libraryController={libraryController}>
@@ -1723,6 +1814,15 @@ useEffect(() => {
           onDismiss={dismissAvailableUpdate}
         />
       )}
+      {releaseChangelog && (
+        <ReleaseChangelogModal
+          version={releaseChangelog.version}
+          changes={releaseChangelog.changes}
+          releaseUrl={releaseChangelog.releaseUrl}
+          onDismiss={dismissReleaseChangelog}
+        />
+      )}
+      <ErrorToastViewport isShifted={Boolean(availableUpdate)} />
     </div>
     </PlaylistContextMenuProvider>
     </TrackContextMenuProvider>

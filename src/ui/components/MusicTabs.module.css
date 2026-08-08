@@ -36,7 +36,7 @@
   max-width: 250px;
   flex: 1;
   padding: 0 18px;
-  background: rgb(255 255 255 / 2%);
+  background: transparent;
   cursor: pointer;
   user-select: none;
   touch-action: none;
@@ -45,11 +45,11 @@
 }
 
 .tab:hover {
-  background: rgb(255 255 255 / 6%);
+  background: var(--color-control-hover);
 }
 
 .tab.active {
-  background: rgb(255 255 255 / 4%);
+  background: var(--color-control-active);
 }
 
 .tab.dragging {

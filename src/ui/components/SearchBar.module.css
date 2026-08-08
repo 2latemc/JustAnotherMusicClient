@@ -6,7 +6,7 @@
   min-height: 56px;
   padding: 10px 0 10px 16px;
   border-bottom: 1px solid var(--color-border);
-  background: rgb(5 5 5 / 46%);
+  background: var(--color-window-chrome);
   backdrop-filter: blur(22px) saturate(115%);
 }
 
@@ -30,13 +30,13 @@
 }
 
 .navigationButton:disabled {
-  color: rgb(255 255 255 / 22%);
+  color: var(--color-text-muted);
   cursor: default;
   opacity: 0.75;
 }
 
 .navigationButton:disabled:hover {
-  color: rgb(255 255 255 / 22%);
+  color: var(--color-text-muted);
 }
 
 .bar {
@@ -66,9 +66,9 @@
   margin: -10px 0 -10px 2px;
   padding: 0;
   border: 0;
-  border-left: 1px solid rgb(255 255 255 / 4%);
+  border-left: 1px solid var(--color-border);
   border-radius: 0;
-  background: rgb(255 255 255 / 2.5%);
+  background: var(--color-bg-subtle);
   color: var(--color-text-muted);
   cursor: pointer;
   transition:
@@ -78,13 +78,13 @@
 }
 
 .settingsButton:hover {
-  border-left-color: rgb(255 255 255 / 7%);
-  background: rgb(255 255 255 / 7%);
+  border-left-color: var(--color-border-strong);
+  background: var(--color-control-hover);
   color: var(--color-text-primary);
 }
 
 .bar:hover {
-  border-color: #444;
+  border-color: var(--color-border-strong);
   background: var(--color-bg-overlay);
 }
 
@@ -93,10 +93,10 @@
 }
 
 .bar kbd {
-  border: 1px solid #3a3a3a;
+  border: 1px solid var(--color-border);
   border-radius: 5px;
   padding: 2px 6px;
-  background: #151515;
+  background: var(--color-bg);
   color: var(--color-text-muted);
   font-family: inherit;
   font-size: var(--font-size-xs);

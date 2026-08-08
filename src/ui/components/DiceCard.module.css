@@ -54,12 +54,17 @@
   place-items: center;
   border-radius: var(--radius-full);
   background: var(--color-accent);
-  color: white;
+  color: var(--color-text-on-accent);
   box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
 }
 
 .fallbackIcon {
   color: var(--color-text-secondary);
+  opacity: 0.72;
+}
+
+:global(html[data-app-theme="light"]) .fallbackIcon {
+  opacity: 0.9;
 }
 
 .title,

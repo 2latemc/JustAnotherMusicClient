@@ -17,6 +17,7 @@
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.10.1",
+    "bgutils-js": "^4.0.2",
     "discord-rpc": "^4.0.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

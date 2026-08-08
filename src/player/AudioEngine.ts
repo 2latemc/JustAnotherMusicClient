@@ -1,4 +1,4 @@
-import { logInternalError, logInternalInfo, logInternalWarn } from "../internal/logging";
+import { logInternalDebug, logInternalError, logInternalInfo, logInternalWarn } from "../internal/logging";
 
 type YouTubePlayerEvent = {
   data: number;
@@ -338,7 +338,7 @@ export class AudioEngine {
     const beforeAudioVolume = this.audio?.volume ?? null;
     this.volume = nextVolume;
     this.applyOutputVolume();
-    logInternalInfo("AudioEngine.setVolume", {
+    logInternalDebug("AudioEngine.setVolume", {
       requestedLevel: level,
       volume: this.volume,
       hasNativeAudio: Boolean(this.audio),
@@ -368,7 +368,7 @@ export class AudioEngine {
       this.player?.unMute();
     }
     this.applyOutputVolume();
-    logInternalInfo("AudioEngine.setMuted", {
+    logInternalDebug("AudioEngine.setMuted", {
       muted: this.muted,
       hasNativeAudio: Boolean(this.audio),
       hasYouTubePlayer: Boolean(this.player),

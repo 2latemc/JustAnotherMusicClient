@@ -25,8 +25,8 @@ use windows::{
         UI::{
             Shell::{
                 DefSubclassProc, ITaskbarList3, RemoveWindowSubclass, SetWindowSubclass,
-                TaskbarList, THUMBBUTTON, THUMBBUTTONFLAGS, THUMBBUTTONMASK, THB_FLAGS, THB_ICON,
-                THB_TOOLTIP,
+                TaskbarList, THB_FLAGS, THB_ICON, THB_TOOLTIP, THUMBBUTTON, THUMBBUTTONFLAGS,
+                THUMBBUTTONMASK,
             },
             WindowsAndMessaging::{CreateIcon, DestroyIcon, HICON, WM_COMMAND},
         },
@@ -459,11 +459,8 @@ impl ThumbnailToolbar {
 impl Drop for ThumbnailToolbar {
     fn drop(&mut self) {
         unsafe {
-            let _ = RemoveWindowSubclass(
-                self.hwnd,
-                Some(taskbar_subclass_proc),
-                TASKBAR_SUBCLASS_ID,
-            );
+            let _ =
+                RemoveWindowSubclass(self.hwnd, Some(taskbar_subclass_proc), TASKBAR_SUBCLASS_ID);
             drop(Box::from_raw(self.app_handle));
             let _ = DestroyIcon(self.previous_icon);
             let _ = DestroyIcon(self.play_icon);

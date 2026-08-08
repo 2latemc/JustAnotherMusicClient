@@ -1,0 +1,43 @@
+/*
+  Example custom theme for Just Another Music Client.
+  Import this file from Settings > Style > Import CSS.
+*/
+
+:root {
+  --bg: #07111f;
+  --chrome: #0b1626;
+  --text: #eef7ff;
+
+  --color-bg: rgb(7 17 31 / 78%);
+  --color-bg-elevated: rgb(13 29 49 / 82%);
+  --color-bg-overlay: rgb(22 45 73 / 88%);
+  --color-bg-subtle: rgb(125 197 255 / 8%);
+  --color-bg-muted: rgb(3 12 23 / 24%);
+
+  --color-text-primary: #eef7ff;
+  --color-text-secondary: #a9c4dc;
+  --color-text-muted: #6f8da8;
+  --color-text-on-accent: #f7fbff;
+  --color-text-inverted: #06101c;
+
+  --color-accent: #2f9cff;
+  --color-accent-hover: #1c7fd7;
+
+  --color-border: rgb(168 213 255 / 14%);
+  --color-border-strong: rgb(168 213 255 / 24%);
+
+  --color-app-backdrop: #06101c;
+  --color-window-chrome: rgb(6 16 28 / 82%);
+  --color-panel-chrome: rgb(10 25 43 / 82%);
+  --color-player-chrome: rgb(8 20 36 / 86%);
+  --color-backdrop-vignette: rgb(0 8 18 / 52%);
+  --color-control-hover: rgb(125 197 255 / 10%);
+  --color-control-active: rgb(125 197 255 / 16%);
+
+  --color-slider-track: #1f3c58;
+  --color-slider-fill: #7cc6ff;
+  --color-slider-thumb: #eaf7ff;
+
+  --shadow-panel: 0 14px 34px rgb(0 8 18 / 44%);
+  --shadow-chrome: 0 14px 40px rgb(0 8 18 / 28%);
+}

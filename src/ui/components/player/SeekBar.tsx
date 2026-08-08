@@ -4,6 +4,11 @@ import { playerController } from "../../../player/playerStore";
 import { playerUIStore, usePlayerUIState } from "../../stores/playerUIStore";
 import styles from "./SeekBar.module.css";
 
+const PLAYING_REFRESH_MS = 250;
+const PAUSED_REFRESH_MS = 1000;
+const TIME_UPDATE_EPSILON_SEC = 0.05;
+const DURATION_UPDATE_EPSILON_SEC = 0.25;
+
 function formatTime(seconds: number): string {
   if (isNaN(seconds) || !isFinite(seconds)) return "0:00";
   const mins = Math.floor(seconds / 60);
@@ -22,13 +27,21 @@ export function SeekBar() {
   const seekAnimationPromiseRef = useRef<Promise<void> | null>(null);
   const pendingSeekRef = useRef<{ target: number; startedAt: number } | null>(null);
   const displayedTimeRef = useRef(0);
+  const durationRef = useRef(0);
   const pointerStartRef = useRef({ x: 0, y: 0 });
   const isPointerDownRef = useRef(false);
   const isDraggingRef = useRef(false);
 
   const setDisplayedTime = (time: number) => {
+    if (Math.abs(displayedTimeRef.current - time) < TIME_UPDATE_EPSILON_SEC) return;
     displayedTimeRef.current = time;
     setCurrentTime(time);
+  };
+
+  const setDisplayedDuration = (nextDuration: number) => {
+    if (Math.abs(durationRef.current - nextDuration) < DURATION_UPDATE_EPSILON_SEC) return;
+    durationRef.current = nextDuration;
+    setDuration(nextDuration);
   };
 
   const cancelSeekAnimation = () => {
@@ -72,7 +85,14 @@ export function SeekBar() {
   useEffect(() => () => cancelSeekAnimation(), []);
 
   useEffect(() => {
-    let animationFrameId = 0;
+    const hasTrack = Boolean(state.currentTrack);
+    if (!hasTrack || state.status === "loading") {
+      pendingSeekRef.current = null;
+      setDisplayedTime(0);
+      setDisplayedDuration(0);
+      return;
+    }
+
     const update = () => {
       if (!uiState.isSeeking) {
         const engineTime = playerController.getCurrentTime();
@@ -87,14 +107,17 @@ export function SeekBar() {
           pendingSeekRef.current = null;
           setDisplayedTime(engineTime);
         }
-        setDuration(playerController.getDuration());
+        setDisplayedDuration(playerController.getDuration());
       }
-      animationFrameId = requestAnimationFrame(update);
     };
-    animationFrameId = requestAnimationFrame(update);
 
-    return () => cancelAnimationFrame(animationFrameId);
-  }, [uiState.isSeeking, state.status]);
+    update();
+    if (uiState.isSeeking) return;
+
+    const refreshMs = state.status === "playing" ? PLAYING_REFRESH_MS : PAUSED_REFRESH_MS;
+    const intervalId = window.setInterval(update, refreshMs);
+    return () => window.clearInterval(intervalId);
+  }, [uiState.isSeeking, state.currentTrack, state.status]);
 
   const handleSeekStart = (event: React.PointerEvent<HTMLInputElement>) => {
     event.currentTarget.setPointerCapture(event.pointerId);

@@ -10,6 +10,12 @@ import { TrackArtwork } from "../components/TrackArtwork";
 import { useTrackContextMenu } from "../components/TrackContextMenu";
 import styles from "./HomePage.module.css";
 import { ArtistLinks } from "../components/ArtistLinks";
+import {
+  getDownloadedTracks,
+  useDownloaderState,
+} from "../../plugins/official/downloader/downloaderStore";
+import { usePluginEnabled } from "../../plugins/pluginHost";
+import { DOWNLOADER_PLUGIN_ID } from "../../plugins/official/downloader/manifest";
 
 const FALLBACK_QUERIES = [
   "new music",
@@ -62,7 +68,10 @@ export function HomePage({
     () => !suggestionCache.has(tabId),
   );
   const [isSurpriseSpinning, setIsSurpriseSpinning] = useState(false);
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const loadIdRef = useRef(0);
+  const downloaderState = useDownloaderState();
+  const downloaderPluginEnabled = usePluginEnabled(DOWNLOADER_PLUGIN_ID);
   const recentlyPlayed = useMemo(
     () => libraryState.library?.recentlyPlayed ?? EMPTY_TRACKS,
     [libraryState.library],
@@ -77,6 +86,16 @@ export function HomePage({
   const suggestionCacheKey = recentlyPlayed.length > 0
     ? `${tabId}:recent:${recentTrackKey}`
     : `${tabId}:${libraryState.status}:empty`;
+
+  useEffect(() => {
+    const updateOnlineStatus = () => setIsOnline(navigator.onLine);
+    window.addEventListener("online", updateOnlineStatus);
+    window.addEventListener("offline", updateOnlineStatus);
+    return () => {
+      window.removeEventListener("online", updateOnlineStatus);
+      window.removeEventListener("offline", updateOnlineStatus);
+    };
+  }, []);
 
   useEffect(() => {
     if (isWaitingForLibrary) {
@@ -145,6 +164,13 @@ export function HomePage({
   const topSuggestions = suggestions.slice(0, 11);
   const moreSuggestions = suggestions.slice(11, 23);
   const surpriseSuggestions = suggestions.slice(11);
+  const downloadedTracks = useMemo(
+    () => getDownloadedTracks(),
+    [downloaderState.entries],
+  );
+  const showOfflineDownloads = !isOnline
+    && downloaderPluginEnabled
+    && downloadedTracks.length > 0;
 
   const playTrack = (track: Track, queue: readonly Track[]) => {
     void playerController.playTrackById(track.id, queue, true);
@@ -208,6 +234,20 @@ export function HomePage({
           <button type="button" onClick={() => void onSignIn()}>
             Sign in
           </button>
+        </section>
+      )}
+
+      {showOfflineDownloads && (
+        <section className={styles.section}>
+          <h2 className={styles.sectionTitle}>Available offline</h2>
+          <div className={styles.cardRail}>
+            <AlbumCard
+              artworkUrl={downloadedTracks[0]?.artworkUrl}
+              title="Downloaded songs"
+              subtitle={`${downloadedTracks.length} ${downloadedTracks.length === 1 ? "song" : "songs"}`}
+              onClick={() => playTrack(downloadedTracks[0], downloadedTracks)}
+            />
+          </div>
         </section>
       )}
 

@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { logInternalInfo } from "../internal/logging";
+import { logInternalDebug } from "../internal/logging";
 import { YouTubeMusicDataSource } from "../datasource/youtube/YouTubeMusicDataSource";
 import { LibraryController } from "./LibraryController";
 import { PlayerController } from "./PlayerController";
@@ -71,7 +71,7 @@ class ActivePlayerController implements PlayerControllerActions {
   setVolume = async (level: number) => {
     const player = tabManager.getActivePlayer();
     const volume = Math.min(1, Math.max(0, level));
-    logInternalInfo("ActivePlayerController.setVolume", {
+    logInternalDebug("ActivePlayerController.setVolume", {
       requestedLevel: level,
       clampedVolume: volume,
       activeId: tabManager.getActiveId(),
@@ -83,7 +83,7 @@ class ActivePlayerController implements PlayerControllerActions {
       beforeMuted: player.isMuted(),
     });
     await player.setVolume(volume, volume === 0);
-    logInternalInfo("ActivePlayerController.setVolume applied", {
+    logInternalDebug("ActivePlayerController.setVolume applied", {
       activeId: tabManager.getActiveId(),
       activePlayerId: tabManager.getActivePlayerId(),
       playbackOwnerId: tabManager.getPlaybackOwnerId(),
@@ -123,6 +123,10 @@ class ActivePlayerController implements PlayerControllerActions {
 }
 
 export const playerController: PlayerControllerActions = new ActivePlayerController();
+
+export function resolveDownloadStream(track: Parameters<YouTubeMusicDataSource["resolveDownloadStream"]>[0], quality: Parameters<YouTubeMusicDataSource["resolveDownloadStream"]>[1]) {
+  return dataSource.resolveDownloadStream(track, quality);
+}
 
 export function usePlayerState() {
   return useSyncExternalStore(

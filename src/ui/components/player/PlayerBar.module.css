@@ -4,10 +4,10 @@
   left: 0;
   right: 0;
   height: 88px;
-  background: rgb(5 5 5 / 72%);
-  border-top: 1px solid rgb(255 255 255 / 9%);
+  background: var(--color-player-chrome);
+  border-top: 1px solid var(--color-border);
   backdrop-filter: blur(26px) saturate(120%);
-  box-shadow: 0 -14px 40px rgb(0 0 0 / 26%);
+  box-shadow: var(--shadow-chrome);
   display: flex;
   flex-direction: column;
   z-index: 100;
@@ -24,11 +24,11 @@
   gap: 14px;
   max-width: min(480px, calc(100% - 32px));
   padding: 6px 7px 6px 16px;
-  border: 1px solid rgb(255 255 255 / 13%);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-full);
-  background: rgb(35 35 37 / 94%);
+  background: var(--color-bg-elevated);
   color: var(--color-text-primary);
-  box-shadow: 0 14px 34px rgb(0 0 0 / 45%);
+  box-shadow: var(--shadow-panel);
   backdrop-filter: blur(20px) saturate(125%);
   transform: translateX(-50%);
   animation: offlinePromptIn 180ms ease-out;
@@ -48,10 +48,10 @@
   gap: 7px;
   min-height: 34px;
   padding: 0 13px 0 10px;
-  border: 1px solid rgb(255 255 255 / 12%);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-full);
-  background: rgb(210 42 51 / 92%);
-  color: white;
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
   font: inherit;
   font-size: var(--font-size-sm);
   font-weight: 600;
@@ -60,7 +60,7 @@
 }
 
 .reconnectButton:hover:not(:disabled) {
-  background: rgb(231 51 61 / 96%);
+  background: var(--color-accent-hover);
   transform: translateY(-1px);
 }
 
@@ -206,7 +206,7 @@
 
 .iconButton:hover:not(:disabled) {
   color: var(--color-text-primary);
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--color-control-hover);
 }
 
 .iconButton:active:not(:disabled) {
@@ -220,8 +220,8 @@
 
 .activeControl {
   color: var(--color-text-primary);
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.14);
+  background: var(--color-control-active);
+  border-color: var(--color-border);
 }
 
 /* Responsive adjustments */

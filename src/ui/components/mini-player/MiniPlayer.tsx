@@ -53,6 +53,8 @@ const GAP = 2;
 const HOVER_MARGIN_X = 10;
 const HOVER_MARGIN_Y = 8;
 const COLLAPSE_GRACE_MS = 300;
+const WINDOWS_HOVER_ACTIVE_POLL_MS = 50;
+const WINDOWS_HOVER_IDLE_POLL_MS = 250;
 const RIGHT_MOUSE_BUTTON = 2;
 const LEFT_MOUSE_BUTTON = 0;
 const INTERACTIVE_SELECTOR = "button, input, a, [role='button']";
@@ -226,24 +228,41 @@ export default function MiniPlayer() {
   useEffect(() => {
     if (isMacOS || isLinux) return;
 
+    let windowPosition: PhysicalPosition | null = null;
+    let windowSize: Awaited<ReturnType<typeof win.outerSize>> | null = null;
     let isOver = false;
     let lastOverAt = 0;
     let hasEnabledPassThrough = false;
     let running = true;
     let timer: ReturnType<typeof setTimeout>;
 
+    const refreshWindowBounds = async () => {
+      const [position, size] = await Promise.all([
+        win.outerPosition(),
+        win.outerSize(),
+      ]);
+      windowPosition = position;
+      windowSize = size;
+    };
+
     const poll = async () => {
       if (!running) return;
 
       try {
+        if (!windowPosition || !windowSize) {
+          await refreshWindowBounds();
+        }
         if (!hasEnabledPassThrough) {
           await setIgnoreCursorEventsWhenReady(true);
           hasEnabledPassThrough = true;
         }
 
         const cursor = await cursorPosition();
-        const position = await win.outerPosition();
-        const size = await win.outerSize();
+        const position = windowPosition;
+        const size = windowSize;
+        if (!position || !size) {
+          throw new Error("Mini-player bounds unavailable.");
+        }
         const totalHeight = expandedRef.current
           ? BOTTOM_PILL_HEIGHT + GAP + TOP_PILL_HEIGHT
           : BOTTOM_PILL_HEIGHT;
@@ -277,13 +296,33 @@ export default function MiniPlayer() {
         }
       } catch (_) {}
 
-      timer = setTimeout(poll, 50);
+      timer = setTimeout(
+        poll,
+        isOver || isSliderActiveRef.current ? WINDOWS_HOVER_ACTIVE_POLL_MS : WINDOWS_HOVER_IDLE_POLL_MS,
+      );
     };
 
-    poll();
+    const setup = async () => {
+      void refreshWindowBounds();
+      const unlistenMoved = await win.onMoved(({ payload }) => {
+        windowPosition = new PhysicalPosition(payload.x, payload.y);
+      });
+      const unlistenResized = await win.onResized(({ payload }) => {
+        windowSize = payload;
+      });
+      poll();
+
+      return () => {
+        unlistenMoved();
+        unlistenResized();
+      };
+    };
+
+    const cleanup = setup();
     return () => {
       running = false;
       clearTimeout(timer);
+      void cleanup.then((unlisten) => unlisten());
     };
   }, []);
 
@@ -431,6 +470,7 @@ export default function MiniPlayer() {
 
   const handleClose = async () => {
     await win.hide();
+    await emit("mini-player:hidden");
   };
 
   const stopManualWindowDrag = async () => {

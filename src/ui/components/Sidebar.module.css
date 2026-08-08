@@ -1,17 +1,15 @@
 .sidebar {
   height: 100%;
   background:
-    linear-gradient(180deg, rgb(255 255 255 / 8%), transparent 220px),
-    rgb(24 24 24 / 76%);
+    linear-gradient(180deg, var(--color-bg-subtle), transparent 220px),
+    var(--color-panel-chrome);
   backdrop-filter: blur(30px) saturate(125%);
   display: flex;
   flex-direction: column;
   position: relative;
   flex-shrink: 0;
-  border-right: 1px solid rgb(255 255 255 / 13%);
-  box-shadow:
-    inset -1px 0 0 rgb(255 255 255 / 2%),
-    12px 0 36px rgb(0 0 0 / 18%);
+  border-right: 1px solid var(--color-border);
+  box-shadow: var(--shadow-chrome);
   user-select: none;
 }
 
@@ -44,9 +42,9 @@
   gap: 2px;
   padding: 2px;
   margin: 24px 10px 6px;
-  border: 1px solid rgb(255 255 255 / 6%);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-full);
-  background: rgb(0 0 0 / 18%);
+  background: var(--color-bg-muted);
   box-shadow: inset 0 1px 2px rgb(0 0 0 / 18%);
 }
 
@@ -66,7 +64,7 @@
   border: 0;
   border-radius: var(--radius-full);
   background: transparent;
-  color: #858585;
+  color: var(--color-text-muted);
   font: inherit;
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
@@ -75,12 +73,12 @@
 }
 
 .toggleButton:hover {
-  color: #d5d5d5;
-  background: rgb(255 255 255 / 4%);
+  color: var(--color-text-primary);
+  background: var(--color-control-hover);
 }
 
 .activeToggle {
-  color: #fff;
+  color: var(--color-text-on-accent);
   background: var(--color-accent);
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 14%),
@@ -123,8 +121,8 @@
   border: 0;
   border-radius: var(--radius-full);
   padding: 8px 14px;
-  background: rgb(255 255 255 / 10%);
-  color: #fff;
+  background: var(--color-control-hover);
+  color: var(--color-text-primary);
   font: inherit;
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
@@ -133,7 +131,7 @@
 }
 
 .librarySignInButton:hover {
-  background: rgb(255 255 255 / 16%);
+  background: var(--color-control-active);
 }
 
 .libraryRetryButton {
@@ -147,7 +145,7 @@
   border: 1px solid #ff315a;
   border-radius: var(--radius-md);
   background: var(--color-accent);
-  color: #fff;
+  color: var(--color-text-on-accent);
   font: inherit;
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
@@ -165,7 +163,7 @@
 }
 
 .libraryRetryButton:hover:not(:disabled) {
-  background: #ff1746;
+  background: var(--color-accent-hover);
   box-shadow:
     0 0 16px rgb(255 0 51 / 76%),
     0 0 34px rgb(255 0 51 / 34%);
@@ -209,8 +207,8 @@
 }
 
 .albumItem:hover {
-  border-color: rgb(255 255 255 / 5%);
-  background: rgb(255 255 255 / 5%);
+  border-color: var(--color-border);
+  background: var(--color-control-hover);
 }
 
 .albumItem:active {
@@ -228,9 +226,9 @@
   z-index: 3;
   box-shadow:
     0 26px 68px rgb(0 0 0 / 32%),
-    inset 0 0 0 1px rgb(255 255 255 / 18%);
-  background: rgb(255 255 255 / 16%);
-  border-color: rgba(255, 255, 255, 0.3);
+    inset 0 0 0 1px var(--color-border-strong);
+  background: var(--color-control-active);
+  border-color: var(--color-border-strong);
   transition: none;
 }
 
@@ -273,10 +271,10 @@
   border-radius: 6px;
   flex-shrink: 0;
   object-fit: cover;
-  background: rgb(255 255 255 / 6%);
+  background: var(--color-control-hover);
   box-shadow:
     0 3px 10px rgb(0 0 0 / 24%),
-    inset 0 0 0 1px rgb(255 255 255 / 5%);
+    inset 0 0 0 1px var(--color-border);
 }
 
 .albumPreviewFallback {
@@ -287,8 +285,8 @@
 }
 
 .likedSongsPreview {
-  background: rgb(38 38 40);
-  color: #fff;
+  background: var(--color-bg-overlay);
+  color: var(--color-text-primary);
 }
 
 .albumText {
@@ -303,7 +301,7 @@
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
   line-height: 1.25;
-  color: #ededed;
+  color: var(--color-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -312,7 +310,7 @@
 
 .albumArtist {
   overflow: hidden;
-  color: #777;
+  color: var(--color-text-secondary);
   font-size: 12px;
   line-height: 1.25;
   text-overflow: ellipsis;
@@ -320,7 +318,7 @@
 }
 
 .albumItem:hover .albumArtist {
-  color: #969696;
+  color: var(--color-text-primary);
 }
 
 .accountSection {

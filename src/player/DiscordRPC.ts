@@ -91,6 +91,15 @@ export class DiscordRpcService {
     logInternalDebug("Discord.init", { message: "Rust backend will handle connection" });
   }
 
+  static async setEnabled(enabled: boolean): Promise<void> {
+    if (this.isEnabled === enabled) return;
+
+    this.isEnabled = enabled;
+    if (!enabled) {
+      await this.clearPresence(true);
+    }
+  }
+
   /**
    * Update Discord presence with current track information
    * @param data The current track and playback information
@@ -130,8 +139,8 @@ export class DiscordRpcService {
   /**
    * Clear Discord presence (show as idle)
    */
-  static async clearPresence(): Promise<void> {
-    if (!this.isEnabled) {
+  static async clearPresence(force = false): Promise<void> {
+    if (!force && !this.isEnabled) {
       return;
     }
 

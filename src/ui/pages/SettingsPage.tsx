@@ -1,4 +1,12 @@
-import { type CSSProperties, type KeyboardEvent, useEffect, useState, useSyncExternalStore } from "react";
+import {
+  type CSSProperties,
+  type KeyboardEvent,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   IconBrandLastfm,
   IconBug,
@@ -11,7 +19,10 @@ import {
   IconLayoutSidebarRight,
   IconLogin,
   IconLogout,
+  IconMap,
+  IconPalette,
   IconRefresh,
+  IconShieldExclamation,
   IconStar,
   IconTrash,
   IconUser,
@@ -46,6 +57,15 @@ import {
 } from "../settings/playerControls";
 import { setPaperPcMode, usePaperPcMode } from "../settings/paperPcMode";
 import {
+  APP_THEMES,
+  importCustomThemeCss,
+  setAppTheme,
+  setMatrixThemeSettings,
+  useAppTheme,
+  useMatrixThemeSettings,
+  type AppTheme,
+} from "../settings/themes";
+import {
   setNativeWindowControls,
   setWindowsStyleWindowControls,
   useNativeWindowControls,
@@ -59,6 +79,10 @@ import {
   useMiniPlayerHoverAction,
   type MiniPlayerHoverAction,
 } from "../settings/miniPlayer";
+import {
+  setMinimizeToTrayEnabled,
+  useMinimizeToTrayEnabled,
+} from "../settings/minimizeToTray";
 import {
   setMainWindowGeometryPersistenceEnabled,
   useMainWindowGeometryPersistenceEnabled,
@@ -86,21 +110,154 @@ import {
   setLastFmScrobblingEnabled,
   useLastFmScrobblingEnabled,
 } from "../settings/lastfm";
+import {
+  setDiscordRpcEnabled,
+  useDiscordRpcEnabled,
+} from "../settings/discordRpc";
+import {
+  setAuthenticatedStreaming,
+  setYouTubeScrobbling,
+  useAuthenticatedStreaming,
+  useYouTubeScrobbling,
+} from "../settings/youtubeAccount";
+import {
+  AUDIO_QUALITY_LABELS,
+  setStreamingQuality,
+  useStreamingQuality,
+  type AudioQuality,
+} from "../../internal/audioQuality";
+import { setPluginEnabled, usePlugins } from "../../plugins/pluginHost";
+import {
+  rediscoverDownloads,
+  setDownloadPath,
+  setDownloadQuality,
+  useDownloaderState,
+} from "../../plugins/official/downloader/downloaderStore";
+import { DOWNLOADER_PLUGIN_ID } from "../../plugins/official/downloader/manifest";
 import { isLinux } from "../platform";
+import { GITHUB_REPOSITORY_URL } from "../errors/errorManager";
+import {
+  fetchInstalledReleaseChangelog,
+  type ReleaseChangelog,
+} from "../../internal/releaseChangelog";
+import { ReleaseChangelogModal } from "../components/ReleaseChangelogModal";
 import styles from "./SettingsPage.module.css";
 
-const GITHUB_REPOSITORY_URL = "https://github.com/2latemc/JustAnotherMusicClient";
-const GITHUB_NEW_ISSUE_URL = `${GITHUB_REPOSITORY_URL}/issues/new/choose`;
 const KOFI_URL = "https://ko-fi.com/totally2late";
+const USERJOT_FEEDBACK_URL = "https://justanothermusicclient.userjot.com/";
+const USERJOT_ROADMAP_URL = "https://justanothermusicclient.userjot.com/roadmap";
 
-type SettingsTab = "about" | "system" | "shortcuts" | "window";
+type SettingsTab = "about" | "system" | "shortcuts" | "window" | "plugins";
 
 const SETTINGS_TABS: Array<{ id: SettingsTab; label: string }> = [
   { id: "about", label: "About" },
   { id: "system", label: "System" },
   { id: "window", label: "Style" },
+  { id: "plugins", label: "Plugins" },
   { id: "shortcuts", label: "Shortcuts" },
 ];
+
+const THEME_SWATCH_COLORS: Record<AppTheme, string[]> = {
+  dark: ["#070707", "#181818", "#ff0033"],
+  light: ["#f4f5f7", "#ffffff", "#d7193f"],
+  matrix: ["#020803", "#041208", "#4dff77"],
+  custom: ["#2a050d", "#6f1124", "#d9274f"],
+};
+
+interface CustomSelectOption<TValue extends string> {
+  value: TValue;
+  label: string;
+}
+
+interface CustomSelectProps<TValue extends string> {
+  label: string;
+  value: TValue;
+  options: Array<CustomSelectOption<TValue>>;
+  disabled?: boolean;
+  onChange: (value: TValue) => void;
+}
+
+function CustomSelect<TValue extends string>({
+  label,
+  value,
+  options,
+  disabled = false,
+  onChange,
+}: CustomSelectProps<TValue>) {
+  const [open, setOpen] = useState(false);
+  const selectId = useId();
+  const rootRef = useRef<HTMLSpanElement | null>(null);
+  const selectedOption = options.find((option) => option.value === value) ?? options[0];
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  const handleButtonKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      if (!disabled) setOpen(true);
+    }
+  };
+
+  return (
+    <span ref={rootRef} className={styles.selectControl}>
+      <button
+        className={`${styles.selectInput} ${open ? styles.selectInputOpen : ""}`}
+        type="button"
+        disabled={disabled}
+        aria-label={label}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={open ? selectId : undefined}
+        onClick={() => setOpen((current) => !current)}
+        onKeyDown={handleButtonKeyDown}
+      >
+        <span>{selectedOption?.label ?? ""}</span>
+        <IconChevronDown size={17} aria-hidden="true" />
+      </button>
+
+      {open && !disabled ? (
+        <span id={selectId} className={styles.selectMenu} role="listbox" aria-label={label}>
+          {options.map((option) => {
+            const selected = option.value === value;
+            return (
+              <button
+                key={option.value}
+                className={`${styles.selectOption} ${selected ? styles.selectOptionActive : ""}`}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+              >
+                <span>{option.label}</span>
+                {selected && <span className={styles.selectOptionDot} aria-hidden="true" />}
+              </button>
+            );
+          })}
+        </span>
+      ) : null}
+    </span>
+  );
+}
 
 interface SettingsPageProps {
   libraryController: LibraryController;
@@ -128,6 +285,9 @@ export function SettingsPage({
   >("idle");
   const [updateProgress, setUpdateProgress] = useState<UpdateInstallProgress | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
+  const [releaseChangelog, setReleaseChangelog] = useState<ReleaseChangelog | null>(null);
+  const [releaseChangelogLoading, setReleaseChangelogLoading] = useState(false);
+  const [releaseChangelogError, setReleaseChangelogError] = useState<string | null>(null);
   const [autostartEnabled, setAutostartEnabledState] = useState(false);
   const [autostartLoading, setAutostartLoading] = useState(true);
   const [autostartError, setAutostartError] = useState<string | null>(null);
@@ -145,17 +305,31 @@ export function SettingsPage({
   const [lastFmAuth, setLastFmAuth] = useState<LastFmAuthStart | null>(null);
   const [lastFmBusy, setLastFmBusy] = useState(false);
   const [lastFmError, setLastFmError] = useState<string | null>(null);
+  const [themeImporting, setThemeImporting] = useState(false);
+  const [themeError, setThemeError] = useState<string | null>(null);
+  const [showCustomThemeWarning, setShowCustomThemeWarning] = useState(false);
+  const [pluginBusy, setPluginBusy] = useState(false);
+  const [pluginError, setPluginError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<SettingsTab>("about");
   const [listeningShortcut, setListeningShortcut] = useState<KeyboardShortcutAction | null>(null);
   const keyboardShortcuts = useKeyboardShortcuts();
   const paperPcMode = usePaperPcMode();
+  const appTheme = useAppTheme();
+  const matrixThemeSettings = useMatrixThemeSettings();
   const miniPlayerEnabled = useMiniPlayerEnabled();
+  const minimizeToTrayEnabled = useMinimizeToTrayEnabled();
   const miniPlayerHoverAction = useMiniPlayerHoverAction();
   const extraPlayerControlsAlwaysVisible = useExtraPlayerControlsAlwaysVisible();
   const windowsStyleWindowControls = useWindowsStyleWindowControls();
   const nativeWindowControls = useNativeWindowControls();
   const mainWindowGeometryPersistenceEnabled = useMainWindowGeometryPersistenceEnabled();
   const lastFmScrobblingEnabled = useLastFmScrobblingEnabled();
+  const discordRpcEnabled = useDiscordRpcEnabled();
+  const authenticatedStreaming = useAuthenticatedStreaming();
+  const youtubeScrobbling = useYouTubeScrobbling();
+  const streamingQuality = useStreamingQuality();
+  const plugins = usePlugins();
+  const downloaderState = useDownloaderState();
   const localPlaylists = useSyncExternalStore(
     subscribeToLocalPlaylists,
     getLocalPlaylists,
@@ -163,6 +337,7 @@ export function SettingsPage({
   );
   const account = libraryState.library?.account;
   const isSignedIn = libraryState.status === "ready" && account;
+  const accountPlaybackEnabled = authenticatedStreaming && youtubeScrobbling;
   const activeTabIndex = Math.max(0, SETTINGS_TABS.findIndex((tab) => tab.id === activeTab));
   const authBusy = libraryState.status === "restoring"
     || libraryState.status === "authorizing"
@@ -244,6 +419,24 @@ export function SettingsPage({
     } catch {
       setUpdateError("Unable to install the update. You can download it from GitHub.");
       setUpdateStatus("error");
+    }
+  };
+
+  const handleShowReleaseChangelog = async () => {
+    setReleaseChangelogLoading(true);
+    setReleaseChangelogError(null);
+    try {
+      const changelog = await fetchInstalledReleaseChangelog();
+      if (!changelog) {
+        setReleaseChangelogError("No app changelog was found for this release.");
+        return;
+      }
+
+      setReleaseChangelog(changelog);
+    } catch {
+      setReleaseChangelogError("Unable to load the release changelog.");
+    } finally {
+      setReleaseChangelogLoading(false);
     }
   };
 
@@ -434,6 +627,65 @@ export function SettingsPage({
     }
   };
 
+  const handleThemeSelect = (theme: AppTheme) => {
+    setThemeError(null);
+    setAppTheme(theme);
+  };
+
+  const handleImportCustomTheme = async () => {
+    setThemeError(null);
+    setShowCustomThemeWarning(true);
+  };
+
+  const handleChooseDownloadFolder = async () => {
+    setPluginError(null);
+    setPluginBusy(true);
+    try {
+      const selected = await openDialog({
+        directory: true,
+        multiple: false,
+        title: "Choose download folder",
+      });
+      if (typeof selected === "string") await setDownloadPath(selected);
+    } catch {
+      setPluginError("Unable to choose a download folder.");
+    } finally {
+      setPluginBusy(false);
+    }
+  };
+
+  const handleRediscoverDownloads = async () => {
+    setPluginError(null);
+    setPluginBusy(true);
+    try {
+      await rediscoverDownloads();
+    } catch {
+      setPluginError("Unable to rediscover downloads.");
+    } finally {
+      setPluginBusy(false);
+    }
+  };
+
+  const handleConfirmCustomThemeImport = async () => {
+    setThemeError(null);
+    setShowCustomThemeWarning(false);
+    setThemeImporting(true);
+    try {
+      const selected = await openDialog({
+        directory: false,
+        multiple: false,
+        title: "Choose custom CSS theme",
+        filters: [{ name: "CSS", extensions: ["css"] }],
+      });
+      if (typeof selected !== "string") return;
+      await importCustomThemeCss(selected);
+    } catch (error) {
+      setThemeError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setThemeImporting(false);
+    }
+  };
+
   const handleShortcutCapture = (
     event: KeyboardEvent<HTMLButtonElement>,
     action: KeyboardShortcutAction,
@@ -512,10 +764,18 @@ export function SettingsPage({
         <button
           className={styles.secondaryButton}
           type="button"
-          onClick={() => void openUrl(GITHUB_NEW_ISSUE_URL)}
+          onClick={() => void openUrl(USERJOT_ROADMAP_URL)}
+        >
+          <IconMap size={18} />
+          Suggest a feature
+        </button>
+        <button
+          className={styles.secondaryButton}
+          type="button"
+          onClick={() => void openUrl(USERJOT_FEEDBACK_URL)}
         >
           <IconBug size={18} />
-          Report an issue or request a feature
+          Report issue
         </button>
       </div>
 
@@ -594,6 +854,48 @@ export function SettingsPage({
             </div>
 
             {libraryState.error && <p className={styles.error}>{libraryState.error}</p>}
+
+            <div className={styles.settingsList}>
+              <label className={`${styles.settingRow} ${!isSignedIn ? styles.toggleRowDisabled : ""}`}>
+                <span className={styles.toggleDescription}>
+                  <strong>Stream with your account</strong>
+                  <span>Use your signed-in YouTube account for playback and send your listening history to YouTube Music.</span>
+                </span>
+                <input
+                  className={styles.toggleInput}
+                  type="checkbox"
+                  checked={isSignedIn ? accountPlaybackEnabled : false}
+                  disabled={!isSignedIn}
+                  onChange={(event) => {
+                    const enabled = event.target.checked;
+                    setAuthenticatedStreaming(enabled);
+                    setYouTubeScrobbling(enabled);
+                  }}
+                />
+                <span className={styles.toggle} aria-hidden="true" />
+              </label>
+
+              <div
+                className={`${styles.selectRow} ${
+                  !isSignedIn || !accountPlaybackEnabled ? styles.selectRowDisabled : ""
+                }`}
+              >
+                <span className={styles.toggleDescription}>
+                  <strong>Playback quality</strong>
+                  <span>Requires Stream with your account to send listening history to YouTube Music.</span>
+                </span>
+                <CustomSelect
+                  label="Playback quality"
+                  value={streamingQuality}
+                  disabled={!isSignedIn || !accountPlaybackEnabled}
+                  onChange={setStreamingQuality}
+                  options={(Object.keys(AUDIO_QUALITY_LABELS) as AudioQuality[]).map((quality) => ({
+                    value: quality,
+                    label: AUDIO_QUALITY_LABELS[quality],
+                  }))}
+                />
+              </div>
+            </div>
           </section>
 
           <section className={styles.card} aria-labelledby="lastfm-settings-title">
@@ -677,6 +979,33 @@ export function SettingsPage({
             </div>
           </section>
 
+          <section className={styles.card} aria-labelledby="discord-settings-title">
+            <div className={styles.cardHeader}>
+              <div>
+                <h2 id="discord-settings-title">Discord</h2>
+              </div>
+              <span className={`${styles.status} ${discordRpcEnabled ? styles.connected : ""}`}>
+                {discordRpcEnabled ? "Enabled" : "Disabled"}
+              </span>
+            </div>
+
+            <div className={styles.settingsList}>
+              <label className={styles.settingRow}>
+                <span className={styles.toggleDescription}>
+                  <strong>Discord Rich Presence</strong>
+                  <span>Show the current song, artist, album, and artwork in Discord.</span>
+                </span>
+                <input
+                  className={styles.toggleInput}
+                  type="checkbox"
+                  checked={discordRpcEnabled}
+                  onChange={(event) => setDiscordRpcEnabled(event.target.checked)}
+                />
+                <span className={styles.toggle} aria-hidden="true" />
+              </label>
+            </div>
+          </section>
+
           <section className={styles.card} aria-labelledby="about-settings-title">
             <div className={styles.compactHeader}>
               <h2 id="about-settings-title">About</h2>
@@ -694,16 +1023,31 @@ export function SettingsPage({
                     }
                   </span>
                 </span>
-                <button
-                  className={styles.secondaryButton}
-                  type="button"
-                  disabled={updateStatus === "checking"}
-                  onClick={() => void handleCheckForUpdates()}
-                >
-                  <IconRefresh size={18} />
-                  {updateStatus === "checking" ? "Checking..." : "Check for updates"}
-                </button>
+                <div className={styles.updateActions}>
+                  <button
+                    className={styles.secondaryButton}
+                    type="button"
+                    disabled={releaseChangelogLoading}
+                    onClick={() => void handleShowReleaseChangelog()}
+                  >
+                    <IconFileDescription size={18} />
+                    {releaseChangelogLoading ? "Loading..." : "Show changelog"}
+                  </button>
+                  <button
+                    className={styles.secondaryButton}
+                    type="button"
+                    disabled={updateStatus === "checking"}
+                    onClick={() => void handleCheckForUpdates()}
+                  >
+                    <IconRefresh size={18} />
+                    {updateStatus === "checking" ? "Checking..." : "Check for updates"}
+                  </button>
+                </div>
               </div>
+
+              {releaseChangelogError && (
+                <p className={styles.error}>{releaseChangelogError}</p>
+              )}
 
               {updateResult && (
                 <div className={styles.updateResult}>
@@ -796,6 +1140,20 @@ export function SettingsPage({
                   onChange={(event) => {
                     setMainWindowGeometryPersistenceEnabled(event.target.checked);
                   }}
+                />
+                <span className={styles.toggle} aria-hidden="true" />
+              </label>
+
+              <label className={styles.settingRow}>
+                <span className={styles.toggleDescription}>
+                  <strong>Minimize to system tray</strong>
+                  <span>Hide the main window to the tray when you close it. Playback and the mini player keep working.</span>
+                </span>
+                <input
+                  className={styles.toggleInput}
+                  type="checkbox"
+                  checked={minimizeToTrayEnabled}
+                  onChange={(event) => setMinimizeToTrayEnabled(event.target.checked)}
                 />
                 <span className={styles.toggle} aria-hidden="true" />
               </label>
@@ -1015,6 +1373,98 @@ export function SettingsPage({
         </div>
       )}
 
+      {activeTab === "plugins" && (
+        <div className={styles.tabPanel} role="tabpanel" aria-label="Plugin settings">
+          <section className={styles.card} aria-labelledby="plugins-settings-title">
+            <div className={styles.cardHeader}>
+              <div>
+                <h2 id="plugins-settings-title">Plugins</h2>
+                <p>Enable official plugins and manage their app-rendered settings.</p>
+              </div>
+            </div>
+
+            <div className={styles.pluginList}>
+              {plugins.map((plugin) => (
+                <div className={styles.pluginItem} key={plugin.manifest.id}>
+                  <label className={styles.pluginHeader}>
+                    <span className={styles.toggleDescription}>
+                      <strong>{plugin.manifest.name}</strong>
+                      <span>
+                        {plugin.manifest.kind === "official"
+                          ? "Official plugin. It can be disabled, but not removed."
+                          : "Imported plugin."}
+                      </span>
+                    </span>
+                    <input
+                      className={styles.toggleInput}
+                      type="checkbox"
+                      checked={plugin.enabled}
+                      onChange={(event) => setPluginEnabled(plugin.manifest.id, event.target.checked)}
+                    />
+                    <span className={styles.toggle} aria-hidden="true" />
+                  </label>
+
+                  {plugin.enabled && plugin.manifest.id === DOWNLOADER_PLUGIN_ID && (
+                    <div className={styles.pluginSettings}>
+                      <div className={styles.actionRow}>
+                        <span className={styles.toggleDescription}>
+                          <strong>Download folder</strong>
+                          <span>{downloaderState.settings.downloadPath ?? "Music\\Just Another Music Client\\Downloads"}</span>
+                        </span>
+                        <button
+                          className={styles.secondaryButton}
+                          type="button"
+                          disabled={pluginBusy}
+                          onClick={() => void handleChooseDownloadFolder()}
+                        >
+                          <IconFolderOpen size={18} />
+                          Choose folder
+                        </button>
+                      </div>
+
+                      <div className={styles.selectRow}>
+                        <span className={styles.toggleDescription}>
+                          <strong>Quality</strong>
+                          <span>Downloads keep the best container YouTube exposes for the selected quality.</span>
+                        </span>
+                        <CustomSelect<AudioQuality>
+                          label="Download quality"
+                          value={downloaderState.settings.quality}
+                          onChange={(quality) => void setDownloadQuality(quality)}
+                          options={[
+                            { value: "high", label: AUDIO_QUALITY_LABELS.high },
+                            { value: "normal", label: AUDIO_QUALITY_LABELS.normal },
+                            { value: "low", label: AUDIO_QUALITY_LABELS.low },
+                          ]}
+                        />
+                      </div>
+
+                      <div className={styles.actionRow}>
+                        <span className={styles.toggleDescription}>
+                          <strong>Rediscover downloads</strong>
+                          <span>Scan the download folder and relink files that start with a YouTube ID.</span>
+                        </span>
+                        <button
+                          className={styles.secondaryButton}
+                          type="button"
+                          disabled={pluginBusy}
+                          onClick={() => void handleRediscoverDownloads()}
+                        >
+                          <IconRefresh size={18} />
+                          Rediscover
+                        </button>
+                      </div>
+
+                      {pluginError && <p className={styles.error}>{pluginError}</p>}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      )}
+
       {activeTab === "shortcuts" && (
         <div className={styles.tabPanel} role="tabpanel" aria-label="Keyboard shortcut settings">
           <section className={styles.card} aria-labelledby="keyboard-shortcuts-settings-title">
@@ -1087,6 +1537,99 @@ export function SettingsPage({
 
       {activeTab === "window" && (
         <div className={styles.tabPanel} role="tabpanel" aria-label="Style settings">
+          <section className={styles.card} aria-labelledby="theme-settings-title">
+            <div className={styles.cardHeader}>
+              <div>
+                <h2 id="theme-settings-title">Themes</h2>
+                <p>Choose the app theme or import a local CSS override.</p>
+              </div>
+              <IconPalette className={styles.cardIcon} size={22} />
+            </div>
+
+            <div className={styles.themeGrid}>
+              {APP_THEMES.map((theme) => (
+                <button
+                  key={theme.id}
+                  className={`${styles.themeButton} ${appTheme === theme.id ? styles.themeButtonActive : ""}`}
+                  type="button"
+                  aria-pressed={appTheme === theme.id}
+                  onClick={() => handleThemeSelect(theme.id)}
+                >
+                  <span className={styles.themeSwatch} aria-hidden="true">
+                    {THEME_SWATCH_COLORS[theme.id].map((color) => (
+                      <span
+                        key={color}
+                        className={styles.themeSwatchSegment}
+                        style={{ background: color }}
+                      />
+                    ))}
+                  </span>
+                  <span className={styles.themeDetails}>
+                    <strong>{theme.label}</strong>
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {appTheme === "matrix" && (
+              <div className={styles.themeSettingsPanel}>
+                <label className={styles.themeSliderRow}>
+                  <span className={styles.themeSliderLabel}>
+                    <strong>Rain speed</strong>
+                    <span>{matrixThemeSettings.rainSpeed}%</span>
+                  </span>
+                  <input
+                    className={styles.themeRange}
+                    type="range"
+                    min="25"
+                    max="300"
+                    step="5"
+                    value={matrixThemeSettings.rainSpeed}
+                    onChange={(event) => setMatrixThemeSettings({
+                      rainSpeed: Number(event.target.value),
+                    })}
+                  />
+                </label>
+
+                <label className={styles.themeSliderRow}>
+                  <span className={styles.themeSliderLabel}>
+                    <strong>Worn artwork</strong>
+                    <span>{matrixThemeSettings.mediaAging}%</span>
+                  </span>
+                  <input
+                    className={styles.themeRange}
+                    type="range"
+                    min="0"
+                    max="200"
+                    step="5"
+                    value={matrixThemeSettings.mediaAging}
+                    onChange={(event) => setMatrixThemeSettings({
+                      mediaAging: Number(event.target.value),
+                    })}
+                  />
+                </label>
+              </div>
+            )}
+
+            <div className={styles.settingActionRow}>
+              <span className={styles.toggleDescription}>
+                <strong>Custom CSS theme</strong>
+                <span>Import a local .css file. The app copies it into app data and applies it as the Custom CSS theme.</span>
+              </span>
+              <button
+                className={styles.secondaryButton}
+                type="button"
+                disabled={themeImporting}
+                onClick={() => void handleImportCustomTheme()}
+              >
+                <IconFolderOpen size={18} />
+                {themeImporting ? "Importing..." : "Import CSS"}
+              </button>
+            </div>
+
+            {themeError && <p className={styles.error}>{themeError}</p>}
+          </section>
+
           <section className={styles.card} aria-labelledby="window-settings-title">
             <div className={styles.cardHeader}>
               <div>
@@ -1110,25 +1653,21 @@ export function SettingsPage({
               <span className={styles.toggle} aria-hidden="true" />
             </label>
 
-            <label className={styles.selectRow}>
+            <div className={styles.selectRow}>
               <span className={styles.toggleDescription}>
                 <strong>Mini player hover bar</strong>
                 <span>Choose what the expanded hover slider controls.</span>
               </span>
-              <span className={styles.selectControl}>
-                <select
-                  className={styles.selectInput}
-                  value={miniPlayerHoverAction}
-                  onChange={(event) => {
-                    setMiniPlayerHoverAction(event.target.value as MiniPlayerHoverAction);
-                  }}
-                >
-                  <option value="seek">Song position</option>
-                  <option value="volume">Volume</option>
-                </select>
-                <IconChevronDown size={17} aria-hidden="true" />
-              </span>
-            </label>
+              <CustomSelect<MiniPlayerHoverAction>
+                label="Mini player hover bar"
+                value={miniPlayerHoverAction}
+                onChange={setMiniPlayerHoverAction}
+                options={[
+                  { value: "seek", label: "Song position" },
+                  { value: "volume", label: "Volume" },
+                ]}
+              />
+            </div>
 
             <div className={styles.settingActionRow}>
               <span className={styles.toggleDescription}>
@@ -1206,6 +1745,60 @@ export function SettingsPage({
         </div>
       )}
 
+      {releaseChangelog && (
+        <ReleaseChangelogModal
+          version={releaseChangelog.version}
+          changes={releaseChangelog.changes}
+          releaseUrl={releaseChangelog.releaseUrl}
+          onDismiss={() => setReleaseChangelog(null)}
+        />
+      )}
+
+      {showCustomThemeWarning && (
+        <div
+          className={styles.modalOverlay}
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setShowCustomThemeWarning(false);
+          }}
+        >
+          <section
+            className={styles.warningModal}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="custom-theme-warning-title"
+          >
+            <div className={styles.warningIcon} aria-hidden="true">
+              <IconShieldExclamation size={24} />
+            </div>
+            <div className={styles.warningContent}>
+              <h2 id="custom-theme-warning-title">Import custom CSS theme</h2>
+              <p>
+                Custom CSS themes are not scanned for malware by Just Another Music Client.
+                They could contain malicious or unsafe content. Only import CSS files from
+                sources you trust.
+              </p>
+            </div>
+            <div className={styles.warningActions}>
+              <button
+                className={styles.secondaryButton}
+                type="button"
+                onClick={() => setShowCustomThemeWarning(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className={styles.signInButton}
+                type="button"
+                onClick={() => void handleConfirmCustomThemeImport()}
+              >
+                <IconFolderOpen size={18} />
+                Choose CSS file
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   );
 }

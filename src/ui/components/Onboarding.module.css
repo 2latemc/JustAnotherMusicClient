@@ -366,7 +366,7 @@
   border: 1px solid var(--color-accent);
   border-radius: var(--radius-md);
   background: var(--color-accent);
-  color: #fff;
+  color: var(--color-text-on-accent);
   cursor: pointer;
   font: inherit;
   font-weight: var(--font-weight-semibold);

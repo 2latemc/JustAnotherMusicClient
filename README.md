@@ -15,7 +15,7 @@
 </p>
 <br>
 
-A desktop YouTube Music client built with Tauri, React, and TypeScript for **Windows, MacOs & Linux**. [Watch an introduction Video 🎥](https://youtu.be/Ninizwv238s?si=wA8fRk_lP3kesG2B)
+A desktop YouTube Music client built with Tauri, React, and TypeScript for **Windows, MacOs & Linux**.
 
 <br>
 
@@ -92,7 +92,21 @@ Download the **newest available installer** from the [latest release](https://gi
 </a>
 
 ## Roadmap 📌
-View the 👉 [public roadmap here](https://justanothermusicclient.userjot.com/) 👈
+- Website with easy download buttons!
+- **Better lyrics consistency** (some songs still don't have them)
+- Raycast support with app specific URLs
+- Fix Windows media player controls sometimes not working
+- **Music Video** support
+- ~~Last.fm integration~~
+- ~~App Auto-Update so that you don't manually have to check for changes~~
+- ~~Maximize Button + An option for Windows-style window controls~~
+- ~~Start App on boot option~~
+- ~~Liked songs playlist support~~
+- ~~Discord RCP is coming~~
+- ~~Full Linux and MacOS support~~
+- ~~Space to pause sometimes selects elements instead of pausing / resuming~~
+- ~~Cap Too long Song names and make them smoothly move vertically~~
+- ~~Artist Pages with monthly listeners, playlists and popular songs alongside streams amount feature when clicking on the artist name, also integrate into the search results so that one can find artists~~
 
 ## Platform Support 💻
 
@@ -173,6 +187,14 @@ Contributions are welcome. Fork the repository, create a branch for your change,
 By submitting a contribution, you agree to the [Contributor License Agreement](CLA.md). You retain copyright in your contribution while granting the project owner the rights needed to use, modify, distribute, commercialize, and relicense it.
 
 For larger changes, consider opening an issue first so the approach can be discussed before implementation.
+
+#### Write a plugin
+
+Plugin support is being built around official plugins in the repo and imported plugins from zip files. Start with the [plugin authoring guide](instructions/PLUGINS.md) for the package layout, manifest fields, settings model, and planned host API.
+
+#### Custom CSS
+
+Custom CSS themes are best for visual tweaks. Use the app's theme variables and stable theme hooks so your CSS works across dark, light, Matrix, and custom themes.
 
 ### Common Issues
 

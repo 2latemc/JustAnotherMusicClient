@@ -15,6 +15,7 @@ import {
   IconHeartFilled,
   IconLink,
   IconListDetails,
+  IconDownload,
   IconLoader2,
   IconMusicPlus,
   IconPlayerTrackNext,
@@ -35,6 +36,13 @@ import { TrackArtwork } from "./TrackArtwork";
 import styles from "./TrackContextMenu.module.css";
 import { isLocalPlaylist } from "../../player/localPlaylists";
 import { ArtistLinks } from "./ArtistLinks";
+import {
+  getDownloadStatus,
+  queueDownload,
+  useDownloaderState,
+} from "../../plugins/official/downloader/downloaderStore";
+import { usePluginEnabled } from "../../plugins/pluginHost";
+import { DOWNLOADER_PLUGIN_ID } from "../../plugins/official/downloader/manifest";
 
 interface MenuPosition {
   x: number;
@@ -74,6 +82,8 @@ export function TrackContextMenuProvider({
 }: TrackContextMenuProviderProps) {
   const libraryState = useLibraryState();
   const playerState = usePlayerState();
+  useDownloaderState();
+  const downloaderPluginEnabled = usePluginEnabled(DOWNLOADER_PLUGIN_ID);
   const menuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const playlistRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -370,6 +380,10 @@ export function TrackContextMenuProvider({
     : false;
   const canLikeSelectedTrack = track?.source !== "local";
   const canCopySelectedTrackLink = track?.source !== "local";
+  const canDownloadSelectedTrack = track?.source === "youtube"
+    && downloaderPluginEnabled
+    && track
+    && getDownloadStatus(track.id) !== "ready";
   const canRemoveSelectedTrackFromPlaylist = Boolean(
     menuContext?.playlist
       && menuContext.playlist.isEditable !== false
@@ -403,6 +417,20 @@ export function TrackContextMenuProvider({
             <span className={styles.menuLabel}>Add to playlist</span>
             <kbd>Ctrl S</kbd>
           </button>
+          {canDownloadSelectedTrack && track && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                queueDownload(track);
+                setMenuPosition(null);
+                showToast(`Downloading "${track.title}"`);
+              }}
+            >
+              <IconDownload size={18} aria-hidden="true" />
+              <span className={styles.menuLabel}>Download track</span>
+            </button>
+          )}
           {canLikeSelectedTrack && (
             <button
               type="button"

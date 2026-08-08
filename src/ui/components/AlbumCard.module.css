@@ -28,9 +28,18 @@
   height: 100%;
 }
 
+.cover .artwork img {
+  transform: scale(1.08);
+}
+
 .artworkFallback {
   color: var(--color-text-secondary);
-  opacity: 0.55;
+  opacity: 0.72;
+}
+
+:global(html[data-app-theme="light"]) .artworkFallback {
+  color: var(--color-text-secondary);
+  opacity: 0.9;
 }
 
 .playOverlay {

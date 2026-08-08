@@ -31,7 +31,7 @@
 
 .likeButton:hover:not(:disabled) {
   color: var(--color-text-primary);
-  background: rgb(255 255 255 / 8%);
+  background: var(--color-control-hover);
 }
 
 .likeButton:disabled {
@@ -41,8 +41,8 @@
 
 .likeButton.liked {
   color: var(--color-text-primary);
-  border-color: rgb(255 255 255 / 10%);
-  background: rgb(255 255 255 / 7%);
+  border-color: var(--color-border);
+  background: var(--color-control-hover);
 }
 
 .likedIconStage {
@@ -93,7 +93,7 @@
 .albumArt {
   width: 56px;
   height: 56px;
-  background: #1a1a1a;
+  background: var(--color-bg-overlay);
   border-radius: 4px;
   flex-shrink: 0;
   display: flex;
@@ -117,7 +117,7 @@
 
 .trackTitle {
   width: 100%;
-  color: #ffffff;
+  color: var(--color-text-primary);
   font-size: 14px;
   font-weight: 500;
   white-space: nowrap;
@@ -147,7 +147,7 @@
 }
 
 .trackArtist {
-  color: #888888;
+  color: var(--color-text-secondary);
   font-size: 12px;
   font-weight: 400;
   white-space: nowrap;
