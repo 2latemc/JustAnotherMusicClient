@@ -65,6 +65,8 @@ const YOUTUBE_MUSIC_PLAYER_API_URL: &str = "https://music.youtube.com/youtubei/v
 const MACOS_LOGIN_USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15";
 const YOUTUBE_COOKIE_CHUNK_SIZE: usize = 900;
 const YOUTUBE_COOKIE_MAX_CHUNKS: usize = 16;
+const YOUTUBE_COOKIE_PERSIST_INTERVAL: Duration = Duration::from_secs(300);
+const YOUTUBE_SLOW_PERSIST_COOKIES: [&str; 3] = ["SIDCC", "__Secure-1PSIDCC", "__Secure-3PSIDCC"];
 const DEFAULT_CACHE_MAX_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 const CURRENT_LOG_FILE_NAME: &str = "current.log";
 const CUSTOM_THEME_CSS_FILE_NAME: &str = "custom-theme.css";
@@ -79,6 +81,122 @@ static DOWNLOAD_CANCEL_FLAGS: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> 
 
 struct CacheLock(Mutex<()>);
 struct AppSettingsLock(Mutex<()>);
+
+#[derive(Default)]
+struct CookieJarState {
+    cookie: Option<String>,
+    persisted_at: Option<Instant>,
+}
+
+struct YoutubeCookieJar(Mutex<CookieJarState>);
+
+fn parse_cookie_header(header: &str) -> Vec<(String, String)> {
+    header
+        .split(';')
+        .filter_map(|part| part.trim().split_once('='))
+        .map(|(name, value)| (name.trim().to_string(), value.trim().to_string()))
+        .collect()
+}
+
+fn serialize_cookie_pairs(pairs: &[(String, String)]) -> String {
+    pairs
+        .iter()
+        .map(|(name, value)| format!("{name}={value}"))
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+fn split_set_cookie(set_cookie: &str) -> Option<(&str, &str)> {
+    let (name, value) = set_cookie.split(';').next()?.split_once('=')?;
+    let name = name.trim();
+    if name.is_empty() {
+        return None;
+    }
+    Some((name, value.trim()))
+}
+
+fn apply_set_cookie(pairs: &mut Vec<(String, String)>, set_cookie: &str) -> bool {
+    let Some((name, value)) = split_set_cookie(set_cookie) else {
+        return false;
+    };
+    let name = name.to_string();
+    let value = value.to_string();
+
+    if value.is_empty() || value == "EXPIRED" || value == "deleted" {
+        let before = pairs.len();
+        pairs.retain(|(existing, _)| existing != &name);
+        return pairs.len() != before;
+    }
+
+    match pairs.iter_mut().find(|(existing, _)| existing == &name) {
+        Some(entry) if entry.1 == value => false,
+        Some(entry) => {
+            entry.1 = value;
+            true
+        }
+        None => {
+            pairs.push((name, value));
+            true
+        }
+    }
+}
+
+fn is_youtube_cookie_host(url: &url::Url) -> bool {
+    url.host_str()
+        .is_some_and(|host| host == "youtube.com" || host.ends_with(".youtube.com"))
+}
+
+fn is_slow_persist_cookie(set_cookie: &str) -> bool {
+    split_set_cookie(set_cookie)
+        .is_some_and(|(name, _)| YOUTUBE_SLOW_PERSIST_COOKIES.contains(&name))
+}
+
+fn refresh_youtube_cookie_jar(
+    app: &tauri::AppHandle,
+    jar: &YoutubeCookieJar,
+    set_cookies: &[String],
+) -> Option<String> {
+    let (merged, should_persist) = {
+        let mut state = jar.0.lock().ok()?;
+        let mut pairs = parse_cookie_header(state.cookie.as_deref()?);
+        let mut changed = false;
+        let mut credential_changed = false;
+        for set_cookie in set_cookies {
+            if apply_set_cookie(&mut pairs, set_cookie) {
+                changed = true;
+                credential_changed |= !is_slow_persist_cookie(set_cookie);
+            }
+        }
+        if !changed {
+            return None;
+        }
+
+        let merged = serialize_cookie_pairs(&pairs);
+        state.cookie = Some(merged.clone());
+        let should_persist = credential_changed
+            || state
+                .persisted_at
+                .map_or(true, |at| at.elapsed() >= YOUTUBE_COOKIE_PERSIST_INTERVAL);
+        if should_persist {
+            state.persisted_at = Some(Instant::now());
+        }
+        (merged, should_persist)
+    };
+
+    if should_persist {
+        match save_youtube_music_cookie(app, &merged) {
+            Ok(()) => eprintln!(
+                "[internal][tauri][info] youtube cookie rotated and persisted bytes={}",
+                merged.len()
+            ),
+            Err(error) => eprintln!(
+                "[internal][tauri][warn] youtube cookie persist failed: {}",
+                error.message
+            ),
+        }
+    }
+    Some(merged)
+}
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1154,25 +1272,34 @@ fn load_encrypted_youtube_music_cookie(
 }
 
 #[tauri::command]
-fn load_youtube_music_cookie(app: tauri::AppHandle) -> Result<Option<String>, CommandError> {
+fn load_youtube_music_cookie(
+    app: tauri::AppHandle,
+    jar: tauri::State<'_, YoutubeCookieJar>,
+) -> Result<Option<String>, CommandError> {
     #[cfg(target_os = "macos")]
-    {
+    let cookie = {
         if let Some(cookie) = load_encrypted_youtube_music_cookie(&app)? {
-            return Ok(Some(cookie));
-        }
-        if let Some(cookie) = load_youtube_music_cookie_entries()? {
+            Some(cookie)
+        } else if let Some(cookie) = load_youtube_music_cookie_entries()? {
             save_youtube_music_cookie(&app, &cookie)?;
             delete_youtube_music_cookie_entries()?;
-            return Ok(Some(cookie));
+            Some(cookie)
+        } else {
+            None
         }
-        return Ok(None);
-    }
+    };
 
     #[cfg(not(target_os = "macos"))]
-    {
+    let cookie = {
         let _ = app;
         load_youtube_music_cookie_entries()
+    }?;
+
+    if let Ok(mut state) = jar.0.lock() {
+        state.cookie = cookie.clone();
+        state.persisted_at = None;
     }
+    Ok(cookie)
 }
 
 #[cfg(any(target_os = "macos", test))]
@@ -1189,7 +1316,10 @@ fn cookie_domain_matches(host: &str, cookie_domain: Option<&str>) -> bool {
 }
 
 #[tauri::command]
-async fn sign_in_youtube_music(app: tauri::AppHandle) -> Result<String, CommandError> {
+async fn sign_in_youtube_music(
+    app: tauri::AppHandle,
+    jar: tauri::State<'_, YoutubeCookieJar>,
+) -> Result<String, CommandError> {
     eprintln!("[internal][tauri][info] sign_in_youtube_music start");
     if let Some(existing) = app.get_webview_window(YOUTUBE_LOGIN_WINDOW) {
         eprintln!("[internal][tauri][info] sign_in_youtube_music closing existing login window");
@@ -1303,6 +1433,10 @@ async fn sign_in_youtube_music(app: tauri::AppHandle) -> Result<String, CommandE
                 cookie_header.len()
             );
             save_youtube_music_cookie(&app, &cookie_header)?;
+            if let Ok(mut state) = jar.0.lock() {
+                state.cookie = Some(cookie_header.clone());
+                state.persisted_at = Some(Instant::now());
+            }
             eprintln!("[internal][tauri][info] sign_in_youtube_music credential saved");
             let _ = window.close();
             eprintln!("[internal][tauri][info] sign_in_youtube_music login window close requested");
@@ -1329,7 +1463,10 @@ async fn sign_in_youtube_music(app: tauri::AppHandle) -> Result<String, CommandE
 }
 
 #[tauri::command]
-async fn delete_youtube_music_cookie(app: tauri::AppHandle) -> Result<(), CommandError> {
+async fn delete_youtube_music_cookie(
+    app: tauri::AppHandle,
+    jar: tauri::State<'_, YoutubeCookieJar>,
+) -> Result<(), CommandError> {
     eprintln!("[internal][tauri][info] delete_youtube_music_cookie start");
     if let Some(window) = app.get_webview_window(YOUTUBE_LOGIN_WINDOW) {
         let _ = window.clear_all_browsing_data();
@@ -1352,6 +1489,10 @@ async fn delete_youtube_music_cookie(app: tauri::AppHandle) -> Result<(), Comman
 
     #[cfg(not(target_os = "macos"))]
     delete_youtube_music_cookie_entries()?;
+    if let Ok(mut state) = jar.0.lock() {
+        state.cookie = None;
+        state.persisted_at = None;
+    }
     eprintln!("[internal][tauri][info] delete_youtube_music_cookie complete");
     Ok(())
 }
@@ -1382,6 +1523,8 @@ struct ProxyHttpResponse {
     status: u16,
     headers: HashMap<String, String>,
     body_base64: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cookie: Option<String>,
 }
 
 #[derive(Clone)]
@@ -2684,7 +2827,9 @@ async fn try_youtube_api(
 
 #[tauri::command]
 async fn proxy_http_request(
-    input: ProxyHttpRequestInput,
+    app: tauri::AppHandle,
+    jar: tauri::State<'_, YoutubeCookieJar>,
+    mut input: ProxyHttpRequestInput,
 ) -> Result<ProxyHttpResponse, CommandError> {
     let started_at = Instant::now();
     let request_url = url::Url::parse(&input.url).map_err(|error| CommandError {
@@ -2703,6 +2848,25 @@ async fn proxy_http_request(
         input.headers.len(),
         input.body_base64.is_some()
     );
+
+    let youtube_host = is_youtube_cookie_host(&request_url);
+    if youtube_host {
+        let live_cookie = jar
+            .0
+            .lock()
+            .ok()
+            .and_then(|state| state.cookie.clone());
+        if let Some(live_cookie) = live_cookie {
+            if let Some(key) = input
+                .headers
+                .keys()
+                .find(|key| key.eq_ignore_ascii_case("cookie"))
+                .cloned()
+            {
+                input.headers.insert(key, live_cookie);
+            }
+        }
+    }
 
     eprintln!("[internal][tauri][debug] proxy_http_request headers:");
     for (key, value) in &input.headers {
@@ -2784,6 +2948,20 @@ async fn proxy_http_request(
         }
     }
 
+    let refreshed_cookie = if youtube_host {
+        let set_cookies = response
+            .headers()
+            .get_all(reqwest::header::SET_COOKIE)
+            .iter()
+            .filter_map(|value| value.to_str().ok().map(str::to_string))
+            .collect::<Vec<_>>();
+        (!set_cookies.is_empty())
+            .then(|| refresh_youtube_cookie_jar(&app, &jar, &set_cookies))
+            .flatten()
+    } else {
+        None
+    };
+
     let body = response.bytes().await.map_err(|error| {
         eprintln!(
             "[internal][tauri][error] proxy_http_request body read failed url={} error={}",
@@ -2832,6 +3010,7 @@ async fn proxy_http_request(
         status,
         headers,
         body_base64: STANDARD.encode(body),
+        cookie: refreshed_cookie,
     })
 }
 
@@ -2919,6 +3098,7 @@ pub fn run() {
     let mut builder = tauri::Builder::default()
         .manage(CacheLock(Mutex::new(())))
         .manage(AppSettingsLock(Mutex::new(())))
+        .manage(YoutubeCookieJar(Mutex::new(CookieJarState::default())))
         .manage(discord_manager)
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())

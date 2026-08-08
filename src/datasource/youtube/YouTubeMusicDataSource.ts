@@ -18,7 +18,7 @@ import type {
 } from "../types";
 import { collectArtworkCandidates, getVideoArtworkFallback, selectArtworkUrl } from "./artwork";
 import { mintPoToken } from "./poToken";
-import { tauriFetch } from "./tauriFetch";
+import { getLiveCookie, setLiveCookie, tauriFetch } from "./tauriFetch";
 import {
   getStreamingQuality,
   selectFormatForQuality,
@@ -260,7 +260,6 @@ export class YouTubeMusicDataSource extends DataSource {
   private webClientPromise: Promise<Innertube> | null = null;
   private anonymousClientPromise: Promise<Innertube> | null = null;
   private downloadClientPromise: Promise<Innertube> | null = null;
-  private musicCookie: string | null = null;
   private musicAccountIndex = 0;
   private musicOnBehalfOfUser: string | null = null;
   private musicSerializedDelegationContext: string | null = null;
@@ -288,6 +287,14 @@ export class YouTubeMusicDataSource extends DataSource {
   constructor() {
     super();
     this.setupJavaScriptEvaluator();
+  }
+
+  private get musicCookie(): string | null {
+    return getLiveCookie();
+  }
+
+  private set musicCookie(cookie: string | null) {
+    setLiveCookie(cookie);
   }
 
   private setupJavaScriptEvaluator() {

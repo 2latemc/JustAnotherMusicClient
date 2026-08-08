@@ -5,11 +5,22 @@ type ProxyHttpResponse = {
   status: number;
   headers: Record<string, string>;
   body_base64: string;
+  cookie?: string;
 };
 
 type TauriFetchInit = RequestInit & {
   timeoutMs?: number;
 };
+
+let liveCookie: string | null = null;
+
+export function getLiveCookie(): string | null {
+  return liveCookie;
+}
+
+export function setLiveCookie(cookie: string | null): void {
+  liveCookie = cookie;
+}
 
 function toBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -111,11 +122,15 @@ async function sha1Hex(value: string): Promise<string> {
     .join("");
 }
 
-async function applyMusicCookieAuth(headers: Record<string, string>): Promise<void> {
-  if (headers["x-youtube-client-name"] !== "67") return;
+async function applyCookieAuth(headers: Record<string, string>, requestUrl: string): Promise<void> {
+  const path = new URL(requestUrl).pathname;
+  const signable = path.startsWith("/youtubei/") || path.startsWith("/api/stats/");
+  if (!headers.cookie || !signable) return;
 
-  const origin = "https://music.youtube.com";
-  const sapisid = getSapisidAuthCookie(headers.cookie);
+  const origin = headers["x-youtube-client-name"] === "67"
+    ? "https://music.youtube.com"
+    : "https://www.youtube.com";
+  const sapisid = getSapisidAuthCookie(liveCookie ?? headers.cookie);
   if (sapisid) {
     const timestamp = Math.floor(Date.now() / 1000);
     const hash = await sha1Hex(`${timestamp} ${sapisid} ${origin}`);
@@ -175,7 +190,7 @@ export async function tauriFetch(input: RequestInfo | URL, init?: TauriFetchInit
   requestHeaders.forEach((value, key) => {
     headers[key] = value;
   });
-  await applyMusicCookieAuth(headers);
+  await applyCookieAuth(headers, normalizeUrl(input));
   const method =
     init?.method ??
     (typeof input !== "string" && !(input instanceof URL) ? input.method : "GET");
@@ -206,6 +221,10 @@ export async function tauriFetch(input: RequestInfo | URL, init?: TauriFetchInit
 
     if (!proxyResponse) {
       throw new Error("Tauri proxy_http_request returned undefined response");
+    }
+
+    if (proxyResponse.cookie) {
+      liveCookie = proxyResponse.cookie;
     }
 
     const bodyBytes = fromBase64(proxyResponse.body_base64);
