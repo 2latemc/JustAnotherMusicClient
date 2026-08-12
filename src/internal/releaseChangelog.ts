@@ -1,8 +1,10 @@
 import { getVersion } from "@tauri-apps/api/app";
+import { getAppSetting, setAppSetting } from "./appSettings";
 
 const RELEASES_API_URL =
   "https://api.github.com/repos/2latemc/JustAnotherMusicClient/releases/tags";
 const RELEASE_TAG_PREFIX = "v";
+const CHANGELOG_SHOWN_VERSION_SETTING_KEY = "releaseChangelogShownVersion";
 const CHANGELOG_SHOWN_PREFIX = "just-another-music-client:changelog-shown:";
 const CHANGELOG_START_MARKER = /<!--\s*app-changelog:start\s*-->/i;
 const CHANGELOG_END_MARKER = /<!--\s*app-changelog:end\s*-->/i;
@@ -47,12 +49,19 @@ export async function fetchInstalledReleaseChangelog(): Promise<ReleaseChangelog
   };
 }
 
-export function hasShownReleaseChangelog(version: string): boolean {
+function hasLocalShownReleaseChangelog(version: string): boolean {
   try {
     return localStorage.getItem(`${CHANGELOG_SHOWN_PREFIX}${version}`) === "true";
   } catch {
     return true;
   }
+}
+
+export async function hasShownReleaseChangelog(version: string): Promise<boolean> {
+  const shownVersion = await getAppSetting<string>(CHANGELOG_SHOWN_VERSION_SETTING_KEY);
+  if (shownVersion === version) return true;
+
+  return hasLocalShownReleaseChangelog(version);
 }
 
 export function markReleaseChangelogShown(version: string): void {
@@ -61,4 +70,6 @@ export function markReleaseChangelogShown(version: string): void {
   } catch {
     // localStorage can be unavailable in restricted webviews. The popup remains dismissible.
   }
+
+  void setAppSetting(CHANGELOG_SHOWN_VERSION_SETTING_KEY, version);
 }

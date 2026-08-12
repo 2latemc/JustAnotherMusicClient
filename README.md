@@ -15,7 +15,7 @@
 </p>
 <br>
 
-A desktop YouTube Music client built with Tauri, React, and TypeScript for **Windows, MacOs & Linux**. [Watch an introduction Video 🎥](https://youtu.be/Ninizwv238s?si=wA8fRk_lP3kesG2B)
+A desktop YouTube Music client built with Tauri, React, and TypeScript for **Windows, MacOs & Linux**.
 
 <br>
 
@@ -99,7 +99,21 @@ nix profile install github:2latemc/JustAnotherMusicClient
 </a>
 
 ## Roadmap 📌
-View the 👉 [public roadmap here](https://justanothermusicclient.userjot.com/) 👈
+- Website with easy download buttons!
+- **Better lyrics consistency** (some songs still don't have them)
+- Raycast support with app specific URLs
+- Fix Windows media player controls sometimes not working
+- **Music Video** support
+- ~~Last.fm integration~~
+- ~~App Auto-Update so that you don't manually have to check for changes~~
+- ~~Maximize Button + An option for Windows-style window controls~~
+- ~~Start App on boot option~~
+- ~~Liked songs playlist support~~
+- ~~Discord RCP is coming~~
+- ~~Full Linux and MacOS support~~
+- ~~Space to pause sometimes selects elements instead of pausing / resuming~~
+- ~~Cap Too long Song names and make them smoothly move vertically~~
+- ~~Artist Pages with monthly listeners, playlists and popular songs alongside streams amount feature when clicking on the artist name, also integrate into the search results so that one can find artists~~
 
 ## Platform Support 💻
 

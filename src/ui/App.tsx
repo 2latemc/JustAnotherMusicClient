@@ -1081,11 +1081,12 @@ export default function App() {
 
     let active = true;
     void fetchInstalledReleaseChangelog()
-      .then((changelog) => {
+      .then(async (changelog) => {
+        if (!changelog) return;
+        const hasShown = await hasShownReleaseChangelog(changelog.version);
         if (
           active
-          && changelog
-          && !hasShownReleaseChangelog(changelog.version)
+          && !hasShown
         ) {
           setReleaseChangelog(changelog);
         }

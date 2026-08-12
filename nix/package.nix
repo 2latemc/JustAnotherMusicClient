@@ -28,7 +28,7 @@
 
 rustPlatform.buildRustPackage rec {
   pname = "just-another-music-client";
-  version = "1.3.1";
+  version = "1.3.2";
 
   src = lib.cleanSource ../.;
 
