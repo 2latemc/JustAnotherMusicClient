@@ -1547,6 +1547,17 @@ async fn sign_in_youtube_music(
     })?;
     eprintln!("[internal][tauri][info] sign_in_youtube_music navigated to Google sign-in");
 
+    let sign_in_cancelled = Arc::new(AtomicBool::new(false));
+    let sign_in_cancelled_for_event = Arc::clone(&sign_in_cancelled);
+    window.on_window_event(move |event| {
+        if matches!(
+            event,
+            tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed
+        ) {
+            sign_in_cancelled_for_event.store(true, Ordering::SeqCst);
+        }
+    });
+
     #[cfg(not(target_os = "macos"))]
     let cookie_url: url::Url =
         "https://music.youtube.com/"
@@ -1556,6 +1567,18 @@ async fn sign_in_youtube_music(
             })?;
 
     for poll in 1..=300 {
+        if sign_in_cancelled.load(Ordering::SeqCst)
+            || app.get_webview_window(YOUTUBE_LOGIN_WINDOW).is_none()
+        {
+            eprintln!(
+                "[internal][tauri][warn] sign_in_youtube_music cancelled poll={}",
+                poll
+            );
+            return Err(CommandError {
+                message: "YouTube Music sign-in was cancelled.".to_string(),
+            });
+        }
+
         #[cfg(target_os = "macos")]
         let cookies = window
             .cookies()
@@ -1633,17 +1656,7 @@ async fn sign_in_youtube_music(
             eprintln!("[internal][tauri][info] sign_in_youtube_music login window close requested");
             return Ok(cookie_header);
         }
-
-        if app.get_webview_window(YOUTUBE_LOGIN_WINDOW).is_none() {
-            eprintln!(
-                "[internal][tauri][warn] sign_in_youtube_music cancelled poll={}",
-                poll
-            );
-            return Err(CommandError {
-                message: "YouTube Music sign-in was cancelled.".to_string(),
-            });
-        }
-        thread::sleep(Duration::from_secs(1));
+        tokio::time::sleep(Duration::from_secs(1)).await;
     }
 
     let _ = window.close();
@@ -3373,6 +3386,12 @@ pub fn run() {
 
                         if let Some(mini) = app.get_webview_window("mini-player") {
                             if let Ok(true) = mini.is_focused() {
+                                return;
+                            }
+                        }
+
+                        if let Some(login) = app.get_webview_window(YOUTUBE_LOGIN_WINDOW) {
+                            if let Ok(true) = login.is_focused() {
                                 return;
                             }
                         }
