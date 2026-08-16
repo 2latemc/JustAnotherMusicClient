@@ -9,7 +9,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, TcpListener};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -1722,6 +1722,29 @@ struct ProxyHttpResponse {
 struct MediaItem {
     bytes: Arc<Vec<u8>>,
     mime_type: String,
+    last_used_seq: u64,
+}
+
+const MEDIA_SERVER_MAX_ITEMS: usize = 24;
+
+// Monotonic sequence instead of wall-clock time: a SystemTime step
+// backwards must never make a fresh item look like the oldest one.
+fn media_lru_sequence() -> u64 {
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+    SEQUENCE.fetch_add(1, Ordering::Relaxed)
+}
+
+fn evict_overflowing_media_items(items: &mut HashMap<String, MediaItem>) {
+    while items.len() > MEDIA_SERVER_MAX_ITEMS {
+        let Some(oldest_key) = items
+            .iter()
+            .min_by_key(|(_, item)| item.last_used_seq)
+            .map(|(key, _)| key.clone())
+        else {
+            break;
+        };
+        items.remove(&oldest_key);
+    }
 }
 
 struct MediaServer {
@@ -1841,7 +1864,11 @@ fn handle_media_request(
         .split('?')
         .next()
         .unwrap_or_default();
-    let item = match items.lock().ok().and_then(|items| items.get(key).cloned()) {
+    let item = match items.lock().ok().and_then(|mut items| {
+        let item = items.get_mut(key)?;
+        item.last_used_seq = media_lru_sequence();
+        Some(item.clone())
+    }) {
         Some(item) => item,
         None => {
             let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n");
@@ -2199,8 +2226,10 @@ async fn fetch_audio_source(
             MediaItem {
                 bytes: Arc::new(bytes),
                 mime_type: mime_type.clone(),
+                last_used_seq: media_lru_sequence(),
             },
         );
+        evict_overflowing_media_items(&mut items);
     }
 
     Ok(AudioSourcePayload {
@@ -2463,8 +2492,10 @@ fn download_audio_source(
             MediaItem {
                 bytes: Arc::new(bytes),
                 mime_type: mime_type.clone(),
+                last_used_seq: media_lru_sequence(),
             },
         );
+        evict_overflowing_media_items(&mut items);
     }
     Ok(AudioSourcePayload {
         url: format!("{}/audio/{}", server.origin, key),
@@ -3443,9 +3474,33 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        cookie_domain_matches, get_sapisid_auth_cookie, sha1_hex, sync_youtube_cookie_auth,
+        cookie_domain_matches, evict_overflowing_media_items, get_sapisid_auth_cookie, sha1_hex,
+        sync_youtube_cookie_auth, MediaItem, MEDIA_SERVER_MAX_ITEMS,
     };
     use std::collections::HashMap;
+    use std::sync::Arc;
+
+    #[test]
+    fn media_server_eviction_keeps_most_recent_items() {
+        let mut items = HashMap::new();
+        for index in 0..(MEDIA_SERVER_MAX_ITEMS + 3) {
+            items.insert(
+                format!("key-{index}"),
+                MediaItem {
+                    bytes: Arc::new(Vec::new()),
+                    mime_type: "audio/mp4".to_string(),
+                    last_used_seq: index as u64,
+                },
+            );
+        }
+
+        evict_overflowing_media_items(&mut items);
+
+        assert_eq!(items.len(), MEDIA_SERVER_MAX_ITEMS);
+        assert!(items.contains_key(&format!("key-{}", MEDIA_SERVER_MAX_ITEMS + 2)));
+        assert!(!items.contains_key("key-0"));
+        assert!(!items.contains_key("key-2"));
+    }
 
     #[test]
     fn cookie_domain_matches_exact_and_parent_domains() {
