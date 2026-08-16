@@ -146,6 +146,15 @@ fn is_youtube_cookie_host(url: &url::Url) -> bool {
         .is_some_and(|host| host == "youtube.com" || host.ends_with(".youtube.com"))
 }
 
+fn is_google_media_cookie_host(url: &url::Url) -> bool {
+    url.host_str().is_some_and(|host| {
+        host == "googlevideo.com"
+            || host.ends_with(".googlevideo.com")
+            || host == "youtube.com"
+            || host.ends_with(".youtube.com")
+    })
+}
+
 fn is_slow_persist_cookie(set_cookie: &str) -> bool {
     split_set_cookie(set_cookie)
         .is_some_and(|(name, _)| YOUTUBE_SLOW_PERSIST_COOKIES.contains(&name))
@@ -1966,7 +1975,17 @@ async fn send_audio_bytes_request(
     }
 
     if let Some(cookie) = cookie.filter(|value| !value.trim().is_empty()) {
-        request = request.header("Cookie", cookie);
+        let host_allows_cookie = url::Url::parse(url)
+            .ok()
+            .is_some_and(|parsed_url| is_google_media_cookie_host(&parsed_url));
+        if host_allows_cookie {
+            request = request.header("Cookie", cookie);
+        } else {
+            eprintln!(
+                "[internal][tauri][warn] fetch_audio_bytes refused cookie forwarding to non-Google host url={} track_id={}",
+                url, track_id
+            );
+        }
     }
 
     let response = request.send().await.map_err(|error| {
@@ -3443,9 +3462,39 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        cookie_domain_matches, get_sapisid_auth_cookie, sha1_hex, sync_youtube_cookie_auth,
+        cookie_domain_matches, get_sapisid_auth_cookie, is_google_media_cookie_host, sha1_hex,
+        sync_youtube_cookie_auth,
     };
     use std::collections::HashMap;
+
+    #[test]
+    fn google_media_cookie_host_accepts_google_hosts() {
+        for host in [
+            "https://rr3---sn-x.googlevideo.com/videoplayback?token=x",
+            "https://googlevideo.com/videoplayback",
+            "https://music.youtube.com/youtubei/v1/player",
+            "https://www.youtube.com/watch?v=abc",
+        ] {
+            let url = url::Url::parse(host).unwrap();
+            assert!(is_google_media_cookie_host(&url), "expected {host} to pass");
+        }
+    }
+
+    #[test]
+    fn google_media_cookie_host_rejects_other_hosts() {
+        for host in [
+            "https://evil.example.com/steal",
+            "https://googlevideo.com.evil.example.com/videoplayback",
+            "https://fakegooglevideo.com/videoplayback",
+            "https://accounts.google.com/",
+        ] {
+            let url = url::Url::parse(host).unwrap();
+            assert!(
+                !is_google_media_cookie_host(&url),
+                "expected {host} to be rejected"
+            );
+        }
+    }
 
     #[test]
     fn cookie_domain_matches_exact_and_parent_domains() {
