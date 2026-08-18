@@ -35,15 +35,8 @@
     "core:window:allow-set-cursor-icon",
     "core:window:allow-set-ignore-cursor-events"
   ],
-  "allowlist": {
-    "shell": {
-      "all": false,
-      "open": true
-    }
-  },
   "remote": {
     "urls": [
-      "https://**",
       "http://localhost/**",
       "http://localhost:*/*",
       "http://127.0.0.1/**",
@@ -52,7 +45,6 @@
   },
   "command": {
     "allow": [
-      "greet",
       "quit_app",
       "frontend_log",
       "app_setting_get",

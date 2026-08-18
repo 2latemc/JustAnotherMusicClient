@@ -1171,11 +1171,6 @@ fn cache_clear(
 }
 
 #[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
-#[tauri::command]
 fn quit_app(app: tauri::AppHandle) {
     eprintln!("[internal][tauri][info] quit_app invoked");
     app.exit(0);
@@ -3408,7 +3403,6 @@ pub fn run() {
             _ => {}
         })
         .invoke_handler(tauri::generate_handler![
-            greet,
             quit_app,
             frontend_log,
             app_setting_get,

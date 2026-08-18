@@ -18,14 +18,12 @@
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.10.1",
     "bgutils-js": "^4.0.2",
-    "discord-rpc": "^4.0.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "youtubei.js": "^17.0.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
-    "@types/discord-rpc": "^4.0.10",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
