@@ -146,6 +146,15 @@ fn is_youtube_cookie_host(url: &url::Url) -> bool {
         .is_some_and(|host| host == "youtube.com" || host.ends_with(".youtube.com"))
 }
 
+fn is_google_media_cookie_host(url: &url::Url) -> bool {
+    url.host_str().is_some_and(|host| {
+        host == "googlevideo.com"
+            || host.ends_with(".googlevideo.com")
+            || host == "youtube.com"
+            || host.ends_with(".youtube.com")
+    })
+}
+
 fn is_slow_persist_cookie(set_cookie: &str) -> bool {
     split_set_cookie(set_cookie)
         .is_some_and(|(name, _)| YOUTUBE_SLOW_PERSIST_COOKIES.contains(&name))
@@ -2001,7 +2010,17 @@ async fn send_audio_bytes_request(
     }
 
     if let Some(cookie) = cookie.filter(|value| !value.trim().is_empty()) {
-        request = request.header("Cookie", cookie);
+        let host_allows_cookie = url::Url::parse(url)
+            .ok()
+            .is_some_and(|parsed_url| is_google_media_cookie_host(&parsed_url));
+        if host_allows_cookie {
+            request = request.header("Cookie", cookie);
+        } else {
+            eprintln!(
+                "[internal][tauri][warn] fetch_audio_bytes refused cookie forwarding to non-Google host url={} track_id={}",
+                url, track_id
+            );
+        }
     }
 
     let response = request.send().await.map_err(|error| {
@@ -3425,7 +3444,9 @@ pub fn run() {
                         let _ = app.emit("main-window-backgrounded", ());
                     });
                 }
-            }
+               system_username_get,
+            custom_theme_css_import,
+         }
             tauri::WindowEvent::Focused(true) => {
                 if window.label() == "main" {
                     let _ = window.app_handle().emit("window-focused", ());
@@ -3440,8 +3461,6 @@ pub fn run() {
             app_setting_set,
             app_setting_remove,
             app_settings_clear,
-            system_username_get,
-            custom_theme_css_import,
             custom_theme_css_get,
             open_current_log,
             fetch_audio_bytes,
@@ -3487,8 +3506,8 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        cookie_domain_matches, evict_overflowing_media_items, get_sapisid_auth_cookie, sha1_hex,
-        sync_youtube_cookie_auth, MediaItem, MEDIA_SERVER_MAX_ITEMS,
+        cookie_domain_matches, get_sapisid_auth_cookie, is_google_media_cookie_host, sha1_hex,
+        sync_youtube_cookie_auth,
     };
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -3513,6 +3532,35 @@ mod tests {
         assert!(items.contains_key(&format!("key-{}", MEDIA_SERVER_MAX_ITEMS + 2)));
         assert!(!items.contains_key("key-0"));
         assert!(!items.contains_key("key-2"));
+    }
+
+    #[test]
+    fn google_media_cookie_host_accepts_google_hosts() {
+        for host in [
+            "https://rr3---sn-x.googlevideo.com/videoplayback?token=x",
+            "https://googlevideo.com/videoplayback",
+            "https://music.youtube.com/youtubei/v1/player",
+            "https://www.youtube.com/watch?v=abc",
+        ] {
+            let url = url::Url::parse(host).unwrap();
+            assert!(is_google_media_cookie_host(&url), "expected {host} to pass");
+        }
+    }
+
+    #[test]
+    fn google_media_cookie_host_rejects_other_hosts() {
+        for host in [
+            "https://evil.example.com/steal",
+            "https://googlevideo.com.evil.example.com/videoplayback",
+            "https://fakegooglevideo.com/videoplayback",
+            "https://accounts.google.com/",
+        ] {
+            let url = url::Url::parse(host).unwrap();
+            assert!(
+                !is_google_media_cookie_host(&url),
+                "expected {host} to be rejected"
+            );
+        }
     }
 
     #[test]
