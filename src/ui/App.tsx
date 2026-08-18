@@ -1436,6 +1436,13 @@ useEffect(() => {
       const miniWin = await WebviewWindow.getByLabel("mini-player");
       if (!miniWin) return;
 
+      const loginWin = await WebviewWindow.getByLabel("youtube-music-login");
+      if (loginWin) {
+        await miniWin.hide();
+        setMiniPlayerVisible(false);
+        return;
+      }
+
       if (Date.now() < mainWindowDragSuppressUntilRef.current) {
         await miniWin.hide();
         setMiniPlayerVisible(false);

@@ -9,7 +9,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, TcpListener};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -1180,11 +1180,6 @@ fn cache_clear(
 }
 
 #[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
-#[tauri::command]
 fn quit_app(app: tauri::AppHandle) {
     eprintln!("[internal][tauri][info] quit_app invoked");
     app.exit(0);
@@ -1556,6 +1551,17 @@ async fn sign_in_youtube_music(
     })?;
     eprintln!("[internal][tauri][info] sign_in_youtube_music navigated to Google sign-in");
 
+    let sign_in_cancelled = Arc::new(AtomicBool::new(false));
+    let sign_in_cancelled_for_event = Arc::clone(&sign_in_cancelled);
+    window.on_window_event(move |event| {
+        if matches!(
+            event,
+            tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed
+        ) {
+            sign_in_cancelled_for_event.store(true, Ordering::SeqCst);
+        }
+    });
+
     #[cfg(not(target_os = "macos"))]
     let cookie_url: url::Url =
         "https://music.youtube.com/"
@@ -1565,6 +1571,18 @@ async fn sign_in_youtube_music(
             })?;
 
     for poll in 1..=300 {
+        if sign_in_cancelled.load(Ordering::SeqCst)
+            || app.get_webview_window(YOUTUBE_LOGIN_WINDOW).is_none()
+        {
+            eprintln!(
+                "[internal][tauri][warn] sign_in_youtube_music cancelled poll={}",
+                poll
+            );
+            return Err(CommandError {
+                message: "YouTube Music sign-in was cancelled.".to_string(),
+            });
+        }
+
         #[cfg(target_os = "macos")]
         let cookies = window
             .cookies()
@@ -1642,17 +1660,7 @@ async fn sign_in_youtube_music(
             eprintln!("[internal][tauri][info] sign_in_youtube_music login window close requested");
             return Ok(cookie_header);
         }
-
-        if app.get_webview_window(YOUTUBE_LOGIN_WINDOW).is_none() {
-            eprintln!(
-                "[internal][tauri][warn] sign_in_youtube_music cancelled poll={}",
-                poll
-            );
-            return Err(CommandError {
-                message: "YouTube Music sign-in was cancelled.".to_string(),
-            });
-        }
-        thread::sleep(Duration::from_secs(1));
+        tokio::time::sleep(Duration::from_secs(1)).await;
     }
 
     let _ = window.close();
@@ -1731,6 +1739,29 @@ struct ProxyHttpResponse {
 struct MediaItem {
     bytes: Arc<Vec<u8>>,
     mime_type: String,
+    last_used_seq: u64,
+}
+
+const MEDIA_SERVER_MAX_ITEMS: usize = 24;
+
+// Monotonic sequence instead of wall-clock time: a SystemTime step
+// backwards must never make a fresh item look like the oldest one.
+fn media_lru_sequence() -> u64 {
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+    SEQUENCE.fetch_add(1, Ordering::Relaxed)
+}
+
+fn evict_overflowing_media_items(items: &mut HashMap<String, MediaItem>) {
+    while items.len() > MEDIA_SERVER_MAX_ITEMS {
+        let Some(oldest_key) = items
+            .iter()
+            .min_by_key(|(_, item)| item.last_used_seq)
+            .map(|(key, _)| key.clone())
+        else {
+            break;
+        };
+        items.remove(&oldest_key);
+    }
 }
 
 struct MediaServer {
@@ -1850,7 +1881,11 @@ fn handle_media_request(
         .split('?')
         .next()
         .unwrap_or_default();
-    let item = match items.lock().ok().and_then(|items| items.get(key).cloned()) {
+    let item = match items.lock().ok().and_then(|mut items| {
+        let item = items.get_mut(key)?;
+        item.last_used_seq = media_lru_sequence();
+        Some(item.clone())
+    }) {
         Some(item) => item,
         None => {
             let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n");
@@ -2218,8 +2253,10 @@ async fn fetch_audio_source(
             MediaItem {
                 bytes: Arc::new(bytes),
                 mime_type: mime_type.clone(),
+                last_used_seq: media_lru_sequence(),
             },
         );
+        evict_overflowing_media_items(&mut items);
     }
 
     Ok(AudioSourcePayload {
@@ -2482,8 +2519,10 @@ fn download_audio_source(
             MediaItem {
                 bytes: Arc::new(bytes),
                 mime_type: mime_type.clone(),
+                last_used_seq: media_lru_sequence(),
             },
         );
+        evict_overflowing_media_items(&mut items);
     }
     Ok(AudioSourcePayload {
         url: format!("{}/audio/{}", server.origin, key),
@@ -3396,10 +3435,18 @@ pub fn run() {
                             }
                         }
 
+                        if let Some(login) = app.get_webview_window(YOUTUBE_LOGIN_WINDOW) {
+                            if let Ok(true) = login.is_focused() {
+                                return;
+                            }
+                        }
+
                         let _ = app.emit("main-window-backgrounded", ());
                     });
                 }
-            }
+               system_username_get,
+            custom_theme_css_import,
+         }
             tauri::WindowEvent::Focused(true) => {
                 if window.label() == "main" {
                     let _ = window.app_handle().emit("window-focused", ());
@@ -3408,15 +3455,12 @@ pub fn run() {
             _ => {}
         })
         .invoke_handler(tauri::generate_handler![
-            greet,
             quit_app,
             frontend_log,
             app_setting_get,
             app_setting_set,
             app_setting_remove,
             app_settings_clear,
-            system_username_get,
-            custom_theme_css_import,
             custom_theme_css_get,
             open_current_log,
             fetch_audio_bytes,
@@ -3466,6 +3510,29 @@ mod tests {
         sync_youtube_cookie_auth,
     };
     use std::collections::HashMap;
+    use std::sync::Arc;
+
+    #[test]
+    fn media_server_eviction_keeps_most_recent_items() {
+        let mut items = HashMap::new();
+        for index in 0..(MEDIA_SERVER_MAX_ITEMS + 3) {
+            items.insert(
+                format!("key-{index}"),
+                MediaItem {
+                    bytes: Arc::new(Vec::new()),
+                    mime_type: "audio/mp4".to_string(),
+                    last_used_seq: index as u64,
+                },
+            );
+        }
+
+        evict_overflowing_media_items(&mut items);
+
+        assert_eq!(items.len(), MEDIA_SERVER_MAX_ITEMS);
+        assert!(items.contains_key(&format!("key-{}", MEDIA_SERVER_MAX_ITEMS + 2)));
+        assert!(!items.contains_key("key-0"));
+        assert!(!items.contains_key("key-2"));
+    }
 
     #[test]
     fn google_media_cookie_host_accepts_google_hosts() {
