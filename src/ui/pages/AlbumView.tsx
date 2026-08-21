@@ -223,7 +223,9 @@ export function AlbumView({ album, playerController, libraryController }: AlbumV
                         fallback={track.artist}
                       />
                     </span>
-                    <IconPlayerPlay size={18} />
+                    <div className={styles.trackActions}>
+                      <IconPlayerPlay size={18} aria-hidden="true" />
+                    </div>
                   </button>
                 );
               })}

@@ -197,61 +197,13 @@
 }
 
 .sortDirection {
-  min-width: 13px;
+  width: 13px;
+  height: 13px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: currentColor;
-  font-size: 11px;
-  font-weight: var(--font-weight-semibold);
-}
-
-.dateSortDirection {
-  overflow: hidden;
-}
-
-.sortArrow {
-  width: 13px;
-  display: inline-flex;
-  flex: 0 0 13px;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  opacity: 1;
-  transform: translateX(0);
-  transition:
-    width var(--transition-fast),
-    flex-basis var(--transition-fast),
-    opacity var(--transition-fast),
-    transform var(--transition-fast);
-}
-
-.sortHoverLabel {
-  max-width: 0;
-  display: inline-block;
-  overflow: hidden;
-  opacity: 0;
-  transform: translateX(-4px);
-  white-space: nowrap;
-  transition:
-    max-width var(--transition-fast),
-    opacity var(--transition-fast),
-    transform var(--transition-fast);
-}
-
-.sortOptions .activeSortOption:hover .dateSortDirection .sortArrow,
-.sortOptions .activeSortOption:focus-visible .dateSortDirection .sortArrow {
-  width: 0;
-  flex-basis: 0;
-  opacity: 0;
-  transform: translateX(-4px);
-}
-
-.sortOptions .activeSortOption:hover .dateSortDirection .sortHoverLabel,
-.sortOptions .activeSortOption:focus-visible .dateSortDirection .sortHoverLabel {
-  max-width: 44px;
-  opacity: 1;
-  transform: translateX(0);
+  flex-shrink: 0;
 }
 
 .playlistSearch {
@@ -370,7 +322,7 @@
   width: 100%;
   min-height: 58px;
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) 28px 24px;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--spacing-md);
   border: 0;
@@ -380,6 +332,24 @@
   color: var(--color-text-primary);
   text-align: left;
   cursor: pointer;
+}
+
+.playlistTrack {
+  grid-template-columns: 32px 42px minmax(0, 1fr) auto;
+}
+
+.trackArtwork {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.trackActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
 }
 
 .trackEntering {
@@ -392,7 +362,8 @@
   background: var(--color-bg-overlay);
 }
 
-.track svg:last-child {
+.track svg:last-child,
+.trackActions svg:last-child {
   pointer-events: none;
 }
 
