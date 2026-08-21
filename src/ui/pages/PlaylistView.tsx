@@ -15,7 +15,6 @@ import type { PlayerControllerActions } from "../../player/playerStore";
 import { markPlaylistPlayed } from "../../player/recentPlaylists";
 import { shuffleTracks } from "../../player/shuffleTracks";
 import { useTrackContextMenu } from "../components/TrackContextMenu";
-import { isLocalPlaylist, reorderLocalPlaylistTracks } from "../../player/localPlaylists";
 import styles from "./AlbumView.module.css";
 import { ArtistLinks } from "../components/ArtistLinks";
 import { usePlaylistContextMenu } from "../components/PlaylistContextMenu";
@@ -24,6 +23,7 @@ import { useKeyboardShortcuts } from "../settings/keyboardShortcuts";
 import { shouldStartPageSearch } from "./pageSearchKeyboard";
 import { PlaylistDownloadButton } from "../components/PlaylistDownloadButton";
 import { DownloaderStatusBadge } from "../components/DownloaderStatusBadge";
+import { useLocalPlaylistDragReorder } from "../hooks/useLocalPlaylistDragReorder";
 
 interface PlaylistViewProps {
   playlist?: Playlist;
@@ -98,26 +98,15 @@ export function PlaylistView({ playlist, playerController, libraryController }: 
   const [sort, setSort] = useState<PlaylistSort>("dateAdded");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [playlistSearchQuery, setPlaylistSearchQuery] = useState("");
-  const [dropTargetIndex, setDropTargetIndex] = useState<{ localPath: string; insertAfter: boolean } | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const playlistSearchInputRef = useRef<HTMLInputElement | null>(null);
   const playlistIdRef = useRef<string | undefined>(undefined);
   const isLoadingMoreRef = useRef(false);
   const tracksRef = useRef<Track[]>([]);
-  const pointerDragRef = useRef<{
-    pointerId: number;
-    localPath: string;
-    startY: number;
-    isDragging: boolean;
-  } | null>(null);
-  const dropTargetRef = useRef<{ localPath: string; insertAfter: boolean } | null>(null);
-  const suppressClickRef = useRef(false);
 
   playlistIdRef.current = playlist?.id;
   isLoadingMoreRef.current = isLoadingMore;
   tracksRef.current = tracks;
-
-  const isLocalPlaylistView = playlist ? isLocalPlaylist(playlist) : false;
 
   useEffect(() => {
     if (!playlist) return;
@@ -239,9 +228,6 @@ export function PlaylistView({ playlist, playerController, libraryController }: 
     return sortDirection === "asc" ? sorted : sorted.reverse();
   }, [sort, sortDirection, tracks]);
 
-  const sortedTracksRef = useRef(sortedTracks);
-  sortedTracksRef.current = sortedTracks;
-
   const visibleTracks = useMemo(() => {
     const query = playlistSearchQuery.trim().toLocaleLowerCase();
     if (!query) return sortedTracks;
@@ -264,95 +250,16 @@ export function PlaylistView({ playlist, playerController, libraryController }: 
     return delayIndexes;
   }, [enteringTrackKeys, visibleTracks]);
 
-  // Drag to reorder for local playlists
-  useEffect(() => {
-    if (!isLocalPlaylistView) return;
-
-    const handlePointerMove = (event: PointerEvent) => {
-      const drag = pointerDragRef.current;
-      if (!drag || event.pointerId !== drag.pointerId) return;
-
-      if (!drag.isDragging) {
-        const distance = Math.abs(event.clientY - drag.startY);
-        if (distance < 6) return;
-        drag.isDragging = true;
-      }
-
-      event.preventDefault();
-      const target = document
-        .elementFromPoint(event.clientX, event.clientY)
-        ?.closest<HTMLElement>("[data-playlist-track-path]");
-      if (!target) {
-        setDropTargetIndex(null);
-        dropTargetRef.current = null;
-        return;
-      }
-
-      const bounds = target.getBoundingClientRect();
-      const nextTarget = {
-        localPath: target.dataset.playlistTrackPath ?? "",
-        insertAfter: event.clientY >= bounds.top + bounds.height / 2,
-      };
-      dropTargetRef.current = nextTarget;
-      setDropTargetIndex(nextTarget);
-    };
-
-    const handlePointerUp = (event: PointerEvent) => {
-      const drag = pointerDragRef.current;
-      if (!drag || event.pointerId !== drag.pointerId) return;
-
-      if (drag.isDragging && dropTargetRef.current && playlist) {
-        const fromPath = drag.localPath;
-        const toPath = dropTargetRef.current.localPath;
-        if (!fromPath || !toPath) {
-          pointerDragRef.current = null;
-          setDropTargetIndex(null);
-          return;
-        }
-
-        const sorted = sortedTracksRef.current;
-        const fromIndex = sorted.findIndex((t) => (t.localPath ?? t.id) === fromPath);
-        const toIndex = sorted.findIndex((t) => (t.localPath ?? t.id) === toPath);
-        if (fromIndex < 0 || toIndex < 0) return;
-
-        const clampedToIndex = dropTargetRef.current.insertAfter
-          ? Math.min(toIndex + 1, sorted.length)
-          : toIndex;
-        const insertIndex = fromIndex < clampedToIndex
-          ? clampedToIndex - 1
-          : clampedToIndex;
-
-        if (fromIndex !== insertIndex) {
-          reorderLocalPlaylistTracks(playlist.id, fromIndex, clampedToIndex);
-          setTracks((current) => {
-            const next = [...current];
-            const [moved] = next.splice(fromIndex, 1);
-            next.splice(insertIndex, 0, moved);
-            return next;
-          });
-        }
-      }
-
-      if (drag.isDragging) {
-        suppressClickRef.current = true;
-        window.setTimeout(() => {
-          suppressClickRef.current = false;
-        }, 0);
-      }
-      dropTargetRef.current = null;
-      pointerDragRef.current = null;
-      setDropTargetIndex(null);
-    };
-
-    window.addEventListener("pointermove", handlePointerMove, { passive: false });
-    window.addEventListener("pointerup", handlePointerUp);
-    window.addEventListener("pointercancel", handlePointerUp);
-    return () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-      window.removeEventListener("pointercancel", handlePointerUp);
-    };
-  }, [isLocalPlaylistView, playlist]);
+  const {
+    dropTargetIndex,
+    pointerDragRef,
+    suppressClickRef,
+    handlePointerDown,
+  } = useLocalPlaylistDragReorder({
+    playlist,
+    sortedTracks,
+    setTracks,
+  });
 
   if (!playlist) return null;
 
@@ -421,16 +328,6 @@ export function PlaylistView({ playlist, playerController, libraryController }: 
     event.currentTarget.blur();
   };
 
-  const handlePointerDown = (event: React.PointerEvent, track: Track) => {
-    if (!isLocalPlaylistView || event.button !== 0) return;
-    pointerDragRef.current = {
-      pointerId: event.pointerId,
-      localPath: track.localPath ?? track.id,
-      startY: event.clientY,
-      isDragging: false,
-    };
-  };
-
   return (
     <div className={styles.root}>
       <header
@@ -485,37 +382,31 @@ export function PlaylistView({ playlist, playerController, libraryController }: 
             role="group"
             aria-label="Playlist song tools"
           >
-            {playlistSorts.map((item) => (
-              <button
-                key={item.value}
-                type="button"
-                className={sort === item.value ? styles.activeSortOption : ""}
-                aria-pressed={sort === item.value}
-                aria-label={`Sort by ${item.label} ${
-                  sort === item.value ? getDirectionLabel(item.value, sortDirection) : ""
-                }`.trim()}
-                onClick={() => selectSort(item.value)}
-              >
-                <span>{item.label}</span>
-                {sort === item.value && (
-                  <span
-                    className={`${styles.sortDirection} ${
-                      item.value === "dateAdded" ? styles.dateSortDirection : ""
-                    }`}
-                    aria-hidden="true"
-                  >
-                    <span className={styles.sortArrow}>
+            {playlistSorts.map((item) => {
+              const isActive = sort === item.value;
+              const directionText = getDirectionLabel(item.value, sortDirection);
+              const tooltip = isActive
+                ? `Sorted by ${item.label} (${directionText})`
+                : `Sort by ${item.label}`;
+              return (
+                <button
+                  key={item.value}
+                  type="button"
+                  className={isActive ? styles.activeSortOption : ""}
+                  aria-pressed={isActive}
+                  title={tooltip}
+                  aria-label={`Sort by ${item.label} ${isActive ? directionText : ""}`.trim()}
+                  onClick={() => selectSort(item.value)}
+                >
+                  <span>{item.label}</span>
+                  {isActive && (
+                    <span className={styles.sortDirection} aria-hidden="true">
                       <SortDirectionIcon direction={sortDirection} />
                     </span>
-                    {item.value === "dateAdded" && (
-                      <span className={styles.sortHoverLabel}>
-                        {getDirectionLabel(item.value, sortDirection)}
-                      </span>
-                    )}
-                  </span>
-                )}
-              </button>
-            ))}
+                  )}
+                </button>
+              );
+            })}
             <div
               className={`${styles.playlistSearch} ${
                 playlistSearchQuery ? styles.playlistSearchActive : ""
@@ -565,7 +456,7 @@ export function PlaylistView({ playlist, playerController, libraryController }: 
                 <button
                   key={getTrackRenderKey(track, index)}
                   data-playlist-track-path={trackPath}
-                  className={`${styles.track} ${
+                  className={`${styles.track} ${styles.playlistTrack} ${
                     enteringTrackDelayIndexes.has(trackKey) ? styles.trackEntering : ""
                   }`}
                   style={{
@@ -616,6 +507,11 @@ export function PlaylistView({ playlist, playerController, libraryController }: 
                     />
                   )}
                   <span className={styles.trackIndex}>{index + 1}</span>
+                  <TrackArtwork
+                    className={styles.trackArtwork}
+                    artworkUrl={track.artworkUrl}
+                    iconSize={20}
+                  />
                   <span className={styles.trackText}>
                     <span className={styles.trackTitle}>{track.title}</span>
                     <ArtistLinks
@@ -624,8 +520,10 @@ export function PlaylistView({ playlist, playerController, libraryController }: 
                       fallback={track.artist}
                     />
                   </span>
-                  <DownloaderStatusBadge track={track} />
-                  <IconPlayerPlay size={18} />
+                  <div className={styles.trackActions}>
+                    <DownloaderStatusBadge track={track} />
+                    <IconPlayerPlay size={18} aria-hidden="true" />
+                  </div>
                 </button>
               );
             })}
