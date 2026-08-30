@@ -1,25 +1,86 @@
 use block2::RcBlock;
-use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject};
-use objc2::{class, msg_send};
-use objc2_foundation::{NSMutableDictionary, NSNumber, NSString};
+use objc2::{class, msg_send, MainThreadMarker, MainThreadOnly};
+use objc2_foundation::NSString;
+use objc2_web_kit::{WKUserContentController, WKUserScript, WKUserScriptInjectionTime};
 use serde::Deserialize;
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Runtime, WebviewWindow};
 
 const MEDIA_CONTROL_EVENT: &str = "macos-media-control";
 const COMMAND_SUCCESS: isize = 0;
+const YOUTUBE_MEDIA_SESSION_SCRIPT: &str = r#"
+(() => {
+  if (window.top === window) return;
+  const host = window.location.hostname.toLowerCase();
+  const isYouTubeHost = host === "youtube.com"
+    || host.endsWith(".youtube.com")
+    || host === "youtube-nocookie.com"
+    || host.endsWith(".youtube-nocookie.com");
+  if (!isYouTubeHost) return;
+
+  const patchMarker = Symbol.for("just-another-music-client.media-session-patched");
+  const installHandlers = () => {
+    if (!("mediaSession" in navigator)) return false;
+
+    const mediaSession = navigator.mediaSession;
+    const currentSetActionHandler = mediaSession.setActionHandler;
+    if (typeof currentSetActionHandler !== "function") return false;
+    if (currentSetActionHandler[patchMarker]) return true;
+
+    const postAction = (action) => {
+      window.top.postMessage({
+        source: "just-another-music-client",
+        action,
+      }, "*");
+    };
+    const protectedHandlers = {
+      nexttrack: () => postAction("next"),
+      previoustrack: () => postAction("previous"),
+    };
+    const originalSetActionHandler = currentSetActionHandler.bind(mediaSession);
+    const setActionHandler = (action, handler) => {
+      if (action === "nexttrack") {
+        return originalSetActionHandler(action, protectedHandlers.nexttrack);
+      }
+      if (action === "previoustrack") {
+        return originalSetActionHandler(action, protectedHandlers.previoustrack);
+      }
+      return originalSetActionHandler(action, handler);
+    };
+
+    try {
+      Object.defineProperty(setActionHandler, patchMarker, { value: true });
+      Object.defineProperty(mediaSession, "setActionHandler", {
+        configurable: true,
+        writable: true,
+        value: setActionHandler,
+      });
+    } catch {
+      return false;
+    }
+
+    try {
+      originalSetActionHandler("nexttrack", protectedHandlers.nexttrack);
+    } catch {}
+    try {
+      originalSetActionHandler("previoustrack", protectedHandlers.previoustrack);
+    } catch {}
+    return true;
+  };
+
+  if (!installHandlers()) {
+    const retryId = window.setInterval(() => {
+      if (installHandlers()) window.clearInterval(retryId);
+    }, 100);
+    window.setTimeout(() => window.clearInterval(retryId), 10_000);
+  }
+})();
+"#;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct MediaSessionUpdate {
-    title: Option<String>,
-    artist: Option<String>,
-    artwork_url: Option<String>,
-    status: String,
-    duration_sec: Option<f64>,
-    position_sec: Option<f64>,
-}
+pub struct MediaSessionUpdate {}
 
 pub struct MacosMediaSession(Mutex<bool>);
 
@@ -27,16 +88,38 @@ unsafe impl Send for MacosMediaSession {}
 unsafe impl Sync for MacosMediaSession {}
 
 #[link(name = "MediaPlayer", kind = "framework")]
-extern "C" {
-    static MPMediaItemPropertyTitle: *const NSString;
-    static MPMediaItemPropertyArtist: *const NSString;
-    static MPMediaItemPropertyPlaybackDuration: *const NSString;
-    static MPNowPlayingInfoPropertyElapsedPlaybackTime: *const NSString;
-    static MPNowPlayingInfoPropertyPlaybackRate: *const NSString;
+extern "C" {}
+
+pub fn install_youtube_media_session_script<R: Runtime>(
+    window: &WebviewWindow<R>,
+) -> Result<(), String> {
+    window
+        .with_webview(|webview| {
+            let Some(mtm) = MainThreadMarker::new() else {
+                return;
+            };
+            unsafe {
+                let controller: &WKUserContentController = &*webview.controller().cast();
+                let script = WKUserScript::alloc(mtm);
+                let script = WKUserScript::initWithSource_injectionTime_forMainFrameOnly(
+                    script,
+                    &NSString::from_str(YOUTUBE_MEDIA_SESSION_SCRIPT),
+                    WKUserScriptInjectionTime::AtDocumentStart,
+                    false,
+                );
+                controller.addUserScript(&script);
+            }
+        })
+        .map_err(|error| error.to_string())?;
+
+    // Setup can run after the initial document started loading. Reload once so
+    // the user script is present before the YouTube iframe is created.
+    window.reload().map_err(|error| error.to_string())
 }
 
 impl MacosMediaSession {
     pub fn new() -> Self {
+        clear_now_playing_info();
         Self(Mutex::new(false))
     }
 
@@ -54,9 +137,8 @@ impl MacosMediaSession {
         Ok(())
     }
 
-    fn update(&self, app: &AppHandle, update: MediaSessionUpdate) -> Result<(), String> {
+    fn update(&self, app: &AppHandle, _update: MediaSessionUpdate) -> Result<(), String> {
         self.ensure_handlers(app)?;
-        set_now_playing_info(update);
         Ok(())
     }
 }
@@ -69,6 +151,18 @@ fn command_center() -> *mut AnyObject {
 fn now_playing_info_center() -> *mut AnyObject {
     let class: &AnyClass = class!(MPNowPlayingInfoCenter);
     unsafe { msg_send![class, defaultCenter] }
+}
+
+fn clear_now_playing_info() {
+    let center = now_playing_info_center();
+    if center.is_null() {
+        return;
+    }
+
+    let nil_info: *mut AnyObject = std::ptr::null_mut();
+    unsafe {
+        let _: () = msg_send![center, setNowPlayingInfo: nil_info];
+    }
 }
 
 fn install_remote_command_handler(
@@ -114,69 +208,6 @@ fn install_remote_command_handler(
 
     std::mem::forget(block);
     Ok(())
-}
-
-fn set_now_playing_info(update: MediaSessionUpdate) {
-    let center = now_playing_info_center();
-    if center.is_null() {
-        return;
-    }
-
-    let Some(title) = update.title else {
-        let nil_info: *mut AnyObject = std::ptr::null_mut();
-        unsafe {
-            let _: () = msg_send![center, setNowPlayingInfo: nil_info];
-        }
-        return;
-    };
-
-    let info = NSMutableDictionary::<NSString, AnyObject>::dictionaryWithCapacity(6);
-    insert_string(&info, unsafe { &*MPMediaItemPropertyTitle }, &title);
-
-    if let Some(artist) = update.artist {
-        insert_string(&info, unsafe { &*MPMediaItemPropertyArtist }, &artist);
-    }
-
-    if let Some(duration) = update.duration_sec.filter(|duration| duration.is_finite()) {
-        insert_number(
-            &info,
-            unsafe { &*MPMediaItemPropertyPlaybackDuration },
-            duration.max(0.0),
-        );
-    }
-
-    if let Some(position) = update.position_sec.filter(|position| position.is_finite()) {
-        insert_number(
-            &info,
-            unsafe { &*MPNowPlayingInfoPropertyElapsedPlaybackTime },
-            position.max(0.0),
-        );
-    }
-
-    let playback_rate = if update.status == "playing" { 1.0 } else { 0.0 };
-    insert_number(
-        &info,
-        unsafe { &*MPNowPlayingInfoPropertyPlaybackRate },
-        playback_rate,
-    );
-
-    let _ = update.artwork_url;
-
-    unsafe {
-        let _: () = msg_send![center, setNowPlayingInfo: &*info];
-    }
-}
-
-fn insert_string(info: &NSMutableDictionary<NSString, AnyObject>, key: &NSString, value: &str) {
-    let value = NSString::from_str(value);
-    let value: Retained<AnyObject> = value.into();
-    info.insert(key, &value);
-}
-
-fn insert_number(info: &NSMutableDictionary<NSString, AnyObject>, key: &NSString, value: f64) {
-    let value = NSNumber::new_f64(value);
-    let value: Retained<AnyObject> = value.into();
-    info.insert(key, &value);
 }
 
 #[tauri::command]

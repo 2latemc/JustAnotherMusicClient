@@ -2127,6 +2127,7 @@ dependencies = [
  "md5",
  "objc2",
  "objc2-foundation",
+ "objc2-web-kit",
  "portpicker",
  "rand 0.8.6",
  "reqwest 0.12.28",

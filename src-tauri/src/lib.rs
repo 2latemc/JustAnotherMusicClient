@@ -3367,6 +3367,16 @@ pub fn run() {
                 std::eprintln!("[internal][tauri][warn] {}", error.message);
             }
 
+            #[cfg(target_os = "macos")]
+            if let Some(main_window) = app.get_webview_window("main") {
+                if let Err(error) = macos_media::install_youtube_media_session_script(&main_window)
+                {
+                    std::eprintln!(
+                        "[internal][tauri][warn] macOS media-session script setup failed: {error}"
+                    );
+                }
+            }
+
             let tray_menu = MenuBuilder::new(app)
                 .text(TRAY_MENU_SHOW_ID, "Show")
                 .separator()
@@ -3444,9 +3454,7 @@ pub fn run() {
                         let _ = app.emit("main-window-backgrounded", ());
                     });
                 }
-               system_username_get,
-            custom_theme_css_import,
-         }
+            }
             tauri::WindowEvent::Focused(true) => {
                 if window.label() == "main" {
                     let _ = window.app_handle().emit("window-focused", ());
@@ -3461,6 +3469,8 @@ pub fn run() {
             app_setting_set,
             app_setting_remove,
             app_settings_clear,
+            system_username_get,
+            custom_theme_css_import,
             custom_theme_css_get,
             open_current_log,
             fetch_audio_bytes,

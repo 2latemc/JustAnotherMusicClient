@@ -13,10 +13,38 @@ type NativeMediaAction =
   | "previous"
   | { action: "seekTo"; positionSec: number };
 
+type YouTubeMediaSessionMessage = {
+  source: "just-another-music-client";
+  action: "next" | "previous";
+};
+
+const YOUTUBE_MEDIA_SESSION_MESSAGE_SOURCE = "just-another-music-client";
+
+function isYouTubeMediaSessionMessage(
+  event: MessageEvent<unknown>,
+): event is MessageEvent<YouTubeMediaSessionMessage> {
+  if (
+    event.origin !== "https://www.youtube.com"
+    && event.origin !== "https://youtube.com"
+    && event.origin !== "https://www.youtube-nocookie.com"
+    && event.origin !== "https://youtube-nocookie.com"
+  ) return false;
+
+  const data = event.data;
+  return typeof data === "object"
+    && data !== null
+    && "source" in data
+    && data.source === YOUTUBE_MEDIA_SESSION_MESSAGE_SOURCE
+    && "action" in data
+    && (data.action === "next" || data.action === "previous");
+}
+
 const usesNativeWindowsMediaSession =
   isTauri() && /Windows/i.test(navigator.userAgent);
+const usesNativeMacOSMediaSession =
+  isTauri() && /Macintosh|Mac OS X/i.test(navigator.userAgent);
 const usesNativeMediaSession =
-  usesNativeWindowsMediaSession;
+  usesNativeWindowsMediaSession || usesNativeMacOSMediaSession;
 
 function getNativeMediaCommand(): string | null {
   if (usesNativeWindowsMediaSession) return "update_windows_media_session";
@@ -91,6 +119,19 @@ export function useMediaSession(
       void unlistenPromise.then((unlisten) => unlisten());
     };
   }, [controller, nativeMediaControlEvent]);
+
+  useEffect(() => {
+    if (!usesNativeMacOSMediaSession) return;
+
+    const handleMessage = (event: MessageEvent<unknown>) => {
+      if (!isYouTubeMediaSessionMessage(event)) return;
+      if (event.data.action === "next") void controller.skipToNext();
+      if (event.data.action === "previous") void controller.skipToPrevious();
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [controller]);
 
   useEffect(() => {
     if (!nativeMediaCommand) return;
